@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Collection{% endblock %}
+{% block content %}
+<h1>Collection ({{ items|length }})</h1>
+{% if not items %}
+<p>Nothing cataloged yet. <a href="/add">Add your first item</a>.</p>
+{% else %}
+<div class="grid">
+    {% for item in items %}
+    <div class="card">
+        {% if item.cover_art_url %}
+        <img src="{{ item.cover_art_url }}" alt="{{ item.album }} cover">
+        {% else %}
+        <div class="cover-placeholder"></div>
+        {% endif %}
+        <strong>{{ item.album }}</strong><br>
+        {{ item.artist }}<br>
+        <small>{{ item.format }}</small>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

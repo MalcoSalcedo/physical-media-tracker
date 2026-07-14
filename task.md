@@ -20,13 +20,13 @@ Ordered task checklist for building the project and documenting it for a portfol
 
 - [x] Design SQLite schema: `collection`, `now_playing`, `history` tables (see ARCHITECTURE.md §5)
 - [x] Write `schema.sql`, commit it to repo, add a script to initialize the DB (`scripts/init_db.py`)
-- [ ] Build catalog API endpoint(s) (FastAPI): `POST /collection` to add an item by barcode
-- [ ] On barcode submit, look up via Discogs `/database/search?barcode=...`; fall back to MusicBrainz barcode search
-- [ ] If no match found, show a manual-entry form (title/artist/format) instead of failing
-- [ ] Build a simple web form: text input for barcode → submit → confirms match → saves to `collection`
-- [ ] Build `GET /collection` page: grid/list view with cover art
+- [x] Build catalog API endpoint(s) (FastAPI): `POST /collection` to add an item by barcode
+- [x] On barcode submit, look up via Discogs `/database/search?barcode=...`; fall back to MusicBrainz barcode search
+- [x] If no match found, show a manual-entry form (title/artist/format) instead of failing
+- [x] Build a simple web form: text input for barcode → submit → confirms match → saves to `collection`
+- [x] Build `GET /collection` page: grid/list view with cover art
 - [ ] Manually catalog your shelf using the form — this is your seed data
-- [ ] Write tests for the lookup + fallback logic
+- [x] Write tests for the lookup + fallback logic
 - [ ] DEVLOG entry: what worked, what barcodes didn't match, how you handled it
 
 ## Phase 2 — Now-playing / audio ID MVP
