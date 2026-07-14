@@ -18,8 +18,8 @@ Ordered task checklist for building the project and documenting it for a portfol
 
 ## Phase 1 — Catalog MVP (manual entry, no scanner)
 
-- [ ] Design SQLite schema: `collection`, `now_playing`, `history` tables (see ARCHITECTURE.md §5)
-- [ ] Write `schema.sql`, commit it to repo, add a script to initialize the DB (`scripts/init_db.py`)
+- [x] Design SQLite schema: `collection`, `now_playing`, `history` tables (see ARCHITECTURE.md §5)
+- [x] Write `schema.sql`, commit it to repo, add a script to initialize the DB (`scripts/init_db.py`)
 - [ ] Build catalog API endpoint(s) (FastAPI): `POST /collection` to add an item by barcode
 - [ ] On barcode submit, look up via Discogs `/database/search?barcode=...`; fall back to MusicBrainz barcode search
 - [ ] If no match found, show a manual-entry form (title/artist/format) instead of failing
