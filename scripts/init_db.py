@@ -1,19 +1,13 @@
-"""Initialize the SQLite database from schema.sql."""
+"""Initialize the SQLite database from schema.sql.
+
+The app also self-initializes its schema on startup (see app.db.init_db),
+so this script is mainly useful for pointing at a non-default db path.
+"""
 
 import argparse
-import sqlite3
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-SCHEMA_PATH = REPO_ROOT / "schema.sql"
-DEFAULT_DB_PATH = REPO_ROOT / "data" / "collection.db"
-
-
-def init_db(db_path: Path) -> None:
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    schema = SCHEMA_PATH.read_text()
-    with sqlite3.connect(db_path) as conn:
-        conn.executescript(schema)
+from app.db import DB_PATH, init_db
 
 
 def main() -> None:
@@ -21,8 +15,8 @@ def main() -> None:
     parser.add_argument(
         "--db-path",
         type=Path,
-        default=DEFAULT_DB_PATH,
-        help=f"Path to the SQLite database file (default: {DEFAULT_DB_PATH})",
+        default=DB_PATH,
+        help=f"Path to the SQLite database file (default: {DB_PATH})",
     )
     args = parser.parse_args()
     init_db(args.db_path)
