@@ -6,15 +6,15 @@ Ordered task checklist for building the project and documenting it for a portfol
 
 - [/] Create GitHub repo (`physical-media-tracker`), public, with a `.gitignore` for Python
 - [/] Add MIT (or similar) license
-- [ ] Write initial `README.md`: one-paragraph pitch, architecture diagram, current status badge
-- [ ] Copy `physical-media-tracker-build-plan.md` into repo as `docs/ARCHITECTURE.md`
-- [ ] Create `docs/adr/` folder for Architecture Decision Records; write ADR-001: "Manual barcode entry instead of scanner for v1"
-- [ ] Create `DEVLOG.md` for dated, narrative progress entries (this is what recruiters actually read)
-- [ ] Set up GitHub Projects board (Kanban: Backlog / In Progress / Done), linked to the repo
-- [ ] Turn each Phase below into a GitHub Issue, add to the Projects board
-- [ ] Decide branching convention (e.g., `main` protected, feature branches `feat/xxx`, PRs even solo — gives you a reviewable commit history for recruiters)
-- [ ] Set up a Python virtual environment and `requirements.txt` / `pyproject.toml`
-- [ ] Add a basic GitHub Actions workflow that runs lint + tests on push (can be a no-op until Phase 2, but scaffold it now)
+- [/] Write initial `README.md`: one-paragraph pitch, architecture diagram, current status badge
+- [/] Copy `physical-media-tracker-build-plan.md` into repo as `docs/ARCHITECTURE.md`
+- [/] Create `docs/adr/` folder for Architecture Decision Records; write ADR-001: "Manual barcode entry instead of scanner for v1"
+- [/] Create `DEVLOG.md` for dated, narrative progress entries (this is what recruiters actually read)
+- [/] Set up GitHub Projects board (Kanban: Backlog / In Progress / Done), linked to the repo
+- [x] Turn each Phase below into a GitHub Issue, add to the Projects board
+- [x] Decide branching convention (e.g., `main` protected, feature branches `feat/xxx`, PRs even solo — gives you a reviewable commit history for recruiters)
+- [x] Set up a Python virtual environment and `requirements.txt` / `pyproject.toml`
+- [x] Add a basic GitHub Actions workflow that runs lint + tests on push (can be a no-op until Phase 2, but scaffold it now)
 
 ## Phase 1 — Catalog MVP (manual entry, no scanner)
 

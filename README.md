@@ -66,7 +66,8 @@ Setup instructions will be added here once Phase 1 is implemented.
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — system design and tradeoffs
 - [`docs/adr/`](docs/adr) — architecture decision records
-- [`DEVLOG.md`](DEVLOG.md) — dated build log
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — branching convention and dev workflow
+- [`docs/DEVLOG.md`](docs/DEVLOG.md) — dated build log
 - [`task.md`](task.md) — full task breakdown
 
 ## License
