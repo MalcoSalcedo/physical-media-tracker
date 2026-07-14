@@ -6,7 +6,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from app import catalog
-from app.db import get_connection
+from app.db import get_connection, init_db
 
 load_dotenv()
 
@@ -14,6 +14,11 @@ APP_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(APP_DIR / "templates"))
 
 app = FastAPI(title="Physical Media Tracker")
+
+
+@app.on_event("startup")
+def on_startup():
+    init_db()
 
 
 @app.get("/collection")
