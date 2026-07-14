@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Add item{% endblock %}
+{% block content %}
+<h1>Add an item</h1>
+
+<form class="stacked" method="post" action="/add">
+    <label for="barcode">Barcode</label>
+    <input type="text" id="barcode" name="barcode" value="{{ barcode or '' }}" required autofocus>
+    <button type="submit">Look up</button>
+</form>
+
+{% if match %}
+<h2>Match found</h2>
+<p>
+    {% if match.cover_art_url %}<img src="{{ match.cover_art_url }}" alt="cover" style="max-width:120px"><br>{% endif %}
+    <strong>{{ match.album }}</strong> — {{ match.artist }} ({{ match.format }})
+</p>
+<form method="post" action="/collection">
+    <input type="hidden" name="artist" value="{{ match.artist }}">
+    <input type="hidden" name="album" value="{{ match.album }}">
+    <input type="hidden" name="format" value="{{ match.format }}">
+    <input type="hidden" name="barcode" value="{{ barcode }}">
+    <input type="hidden" name="cover_art_url" value="{{ match.cover_art_url or '' }}">
+    <input type="hidden" name="musicbrainz_id" value="{{ match.musicbrainz_id or '' }}">
+    <button type="submit">Confirm &amp; save</button>
+</form>
+{% elif no_match %}
+<h2>No match found</h2>
+<p>Enter the details manually:</p>
+<form class="stacked" method="post" action="/collection">
+    <label for="artist">Artist</label>
+    <input type="text" id="artist" name="artist" required>
+    <label for="album">Album</label>
+    <input type="text" id="album" name="album" required>
+    <label for="format">Format</label>
+    <input type="text" id="format" name="format" placeholder="CD, vinyl, etc." required>
+    <input type="hidden" name="barcode" value="{{ barcode }}">
+    <button type="submit">Save</button>
+</form>
+{% endif %}
+{% endblock %}
