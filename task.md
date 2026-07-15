@@ -41,10 +41,10 @@ AcoustID lookups regardless of signal quality, so identification is built
 around album pre-selection + several complementary techniques rather than a
 single blind fingerprint-and-poll loop.
 
-- [ ] Data model: add a `tracks` table (collection_id, track_number, title,
+- [x] Data model: add a `tracks` table (collection_id, track_number, title,
       duration_seconds); fetch tracklist from MusicBrainz/Discogs release
       detail endpoints when an album is selected
-- [ ] Build "select album to listen to" UI + endpoint; stores the active
+- [x] Build "select album to listen to" UI + endpoint; stores the active
       album context for the listener to use
 - [ ] Build a silence/gap detector (RMS-based), standalone and unit-tested
       against synthetic signals, independent of fingerprinting
