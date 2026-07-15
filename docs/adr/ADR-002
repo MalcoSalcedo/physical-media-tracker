@@ -1,0 +1,86 @@
+# ADR-002: Hybrid, album-context-aware audio identification
+
+## Status
+
+Accepted (2026-07-14)
+
+## Context
+
+The original Phase 2 plan (see `docs/ARCHITECTURE.md` §3 and `task.md`) assumed
+a short (~10-15s) audio clip, fingerprinted with Chromaprint and looked up
+against AcoustID, would be enough to identify whatever's currently playing.
+
+Empirical testing on 2026-07-14 disproved that assumption. Using a clean
+MP3 of a well-known track (Gorillaz - "Feel Good Inc.", not a mic recording,
+so signal quality wasn't the variable) and sweeping clip length/offset:
+
+- Clips under ~90 seconds returned **zero results** from AcoustID's lookup
+  API in most cases, regardless of which part of the song was sampled.
+- A full ~120s+ clip matched instantly at 0.97 confidence.
+- The 30-90s range was inconsistent: sometimes a moderate-confidence match
+  (0.68-0.83), sometimes nothing, with no clean monotonic curve.
+
+Conclusion: **duration, not mic/room signal quality, is the dominant
+bottleneck.** A naive "poll every N seconds with a short clip" loop is both
+slow (has to wait ~90s+ per attempt to get a reliable answer) and unreliable
+for the actual goal of promptly catching a track skip mid-album.
+
+## Decision
+
+Adopt a layered identification system instead of a single blind
+fingerprint-and-poll loop, built around one new product constraint: **the
+user selects which album is about to play, from their existing catalog,
+before starting playback.** That turns "which of ~40 million recordings is
+this" into "which of ~12 known tracks is this," which is a fundamentally
+easier problem and is what makes the other layers viable.
+
+The five layers, working together:
+
+1. **Album pre-selection** — the user picks the active album via the web UI
+   before playing it. The app fetches and stores that album's tracklist
+   (title + duration per track) from MusicBrainz or Discogs release detail
+   endpoints, since our existing barcode-search data is album-level only.
+2. **Silence/gap detection** — continuous, cheap RMS-energy monitoring of
+   the input stream detects the brief silence between tracks in near
+   real time, independent of fingerprinting. This is what makes skip
+   detection *responsive*: it tells us the instant something changed, so we
+   know exactly when to re-identify instead of polling blindly.
+3. **Track-order + duration timer** — once a track is confirmed, advance
+   `now_playing` automatically after that track's known runtime elapses, at
+   zero ongoing API cost. A gap firing earlier/later than the timer expects
+   signals a skip and triggers re-identification.
+4. **Album-constrained fuzzy matching** — the core identification technique.
+   Capture a shorter clip (~30s) than a blind approach would trust, send it
+   to AcoustID, and accept a lower-confidence result (down to ~0.4-0.5) if
+   its title fuzzy-matches one of the active album's known tracks. This is
+   sound specifically because the candidate set is small and known, per the
+   test data above (moderate-confidence matches were sometimes exactly
+   right).
+5. **Local fingerprint caching (self-training)** — once a track is
+   confirmed via (4), cache the fingerprint computed from *our own mic
+   input* for that (album, track) pair. Future plays of the same physical
+   disc through the same mic/room compare against this local cache first,
+   avoiding AcoustID entirely on repeat listens and sidestepping the
+   duration problem, since both sides of the comparison went through the
+   same acoustic path.
+
+Progressive/adaptive clip length (start at ~30s, extend to 60s/90s only if
+no usable candidate comes back) is used within layer 4 as needed, rather
+than always paying the longest-case latency.
+
+## Consequences
+
+- Requires a new `tracks` table (per-album track listing) and a local
+  fingerprint cache, beyond the schema built in Phase 1.
+- `listener.py` is meaningfully more complex than the original single
+  capture-fingerprint-lookup loop implied.
+- Adds a manual step for the user (selecting the album before playing) that
+  the original design didn't require. This is a deliberate trade-off: it's
+  what makes fast, reliable identification possible at all with clip
+  lengths short enough to be responsive.
+- The first play of any given album is still slower/less certain than
+  repeat plays, since the local cache (layer 5) only helps once a track has
+  been identified at least once.
+- Still to validate: real CD player audio via line-in (not mic), and
+  whether the ~30-90s duration finding generalizes across other tracks
+  and not just this one test song.
