@@ -31,16 +31,44 @@ Ordered task checklist for building the project and documenting it for a portfol
 
 ## Phase 2 — Now-playing / audio ID MVP
 
-- [ ] Wire up USB mic, confirm capture works (`arecord` test)
-- [ ] Install Chromaprint / `fpcalc`, test fingerprinting a known track manually
-- [ ] Get an AcoustID API key, test a lookup call end-to-end from the command line
-- [ ] Write `listener.py`: capture short clip → fingerprint → AcoustID lookup → match against `collection` (or just log artist/track if not yet owned)
+- [x] Wire up USB mic, confirm capture works
+- [x] Install Chromaprint / `fpcalc`, test fingerprinting a known track manually
+- [x] Get an AcoustID API key, test a lookup call end-to-end from the command line
+
+See `docs/adr/ADR-002` for why the plan below is more layered than originally
+scoped: empirical testing showed short clips (<90s) are unreliable for
+AcoustID lookups regardless of signal quality, so identification is built
+around album pre-selection + several complementary techniques rather than a
+single blind fingerprint-and-poll loop.
+
+- [ ] Data model: add a `tracks` table (collection_id, track_number, title,
+      duration_seconds); fetch tracklist from MusicBrainz/Discogs release
+      detail endpoints when an album is selected
+- [ ] Build "select album to listen to" UI + endpoint; stores the active
+      album context for the listener to use
+- [ ] Build a silence/gap detector (RMS-based), standalone and unit-tested
+      against synthetic signals, independent of fingerprinting
+- [ ] Build album-constrained fuzzy matching: capture a ~30s clip → fpcalc →
+      AcoustID lookup → accept a lower-confidence match if its title
+      fuzzy-matches a track on the active album
+- [ ] Build a local fingerprint cache: store a confirmed track's own-mic
+      fingerprint; compare against the cache before calling AcoustID on
+      repeat plays of the same album
+- [ ] Build progressive/adaptive clip length fallback (30s → 60s → 90s) for
+      when a short clip returns no usable candidate
+- [ ] Write `listener.py`: orchestrates gap detection → local cache lookup →
+      album-constrained fuzzy AcoustID match → duration-timer advance
+      between checks
 - [ ] On match, update `now_playing` row and append to `history`
-- [ ] Turn `listener.py` into a `systemd` service (`listener.service`) so it runs headless on boot
+- [ ] Turn `listener.py` into a `systemd` service (`listener.service`) so it
+      runs headless on boot
 - [ ] Add `GET /now-playing` endpoint + banner on the web page
-- [ ] Test with CD player at normal listening volume; tune clip length/interval
-- [ ] Write tests for the matching logic (mock AcoustID responses)
-- [ ] DEVLOG entry: fingerprinting accuracy, false positives/negatives, tuning notes
+- [ ] Test with real CD player audio via line-in (Focusrite) at normal
+      listening volume; tune clip length/interval/thresholds
+- [ ] Write tests for the matching logic (gap detector, fuzzy matcher,
+      duration timer — mock AcoustID responses)
+- [ ] DEVLOG entry: fingerprinting accuracy, false positives/negatives,
+      tuning notes
 
 ## Phase 3 — Web UI polish
 

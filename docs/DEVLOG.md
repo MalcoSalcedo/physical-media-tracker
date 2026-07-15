@@ -60,3 +60,37 @@ data.
 Still open on Phase 1: cataloging the rest of the shelf, and tests for the
 lookup/fallback logic are in (`tests/test_catalog.py`) but everything above
 was verified by hand against the live app and live APIs, not just mocks.
+
+## 2026-07-14 — Phase 2 kickoff: the short-clip assumption was wrong
+
+Got the hardware/API prerequisites working fast: a Blue Snowball mic
+recording real audio, Chromaprint (`fpcalc`) installed and fingerprinting,
+and an AcoustID lookup running end-to-end from the command line. First real
+mic recording of Gorillaz - "Feel Good Inc." played from a laptop speaker
+was clearly recognizable on playback, which made it all the more surprising
+when AcoustID returned zero matches for it.
+
+Root-caused this properly instead of guessing: fingerprinted a clean MP3 of
+the same track (no mic, no room, isolates signal quality as a variable) and
+swept clip length/offset against the live API. Short clips (<90s) came back
+empty even from perfectly clean audio; a ~120s+ clip matched instantly at
+0.97 confidence. So the original Phase 2 plan's assumption — a 10-15s clip
+is enough — was just wrong for this track, and duration turned out to be
+the dominant variable, not mic/room signal quality like I initially
+suspected.
+
+That's a real problem for the actual goal (catching a track skip
+responsively), since waiting 90+ seconds per identification attempt is far
+too slow. Landed on a layered design instead of a single blind
+fingerprint-and-poll loop — album pre-selection (user tells the app what's
+about to play, shrinking the candidate set from "all recorded music" to
+"~12 known tracks"), silence-gap detection for fast skip detection,
+duration-based timer advancement between checks, fuzzy-matching short clips
+against the known album tracklist, and a local fingerprint cache to make
+repeat plays of the same disc nearly free. Full reasoning and the test data
+behind it are in `docs/adr/ADR-002`.
+
+Next up: build the pieces in `task.md`'s revised Phase 2 list, then
+validate against real CD player audio via the Focusrite line-in instead of
+the mic — the mic path is a reasonable fallback but the line-in should be
+materially more reliable, and it's hardware I already own.
