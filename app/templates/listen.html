@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Select album{% endblock %}
+{% block content %}
+<h1>What are you about to play?</h1>
+{% if not items %}
+<p>Nothing cataloged yet. <a href="/add">Add an item</a> first.</p>
+{% else %}
+<div class="grid">
+    {% for item in items %}
+    <div class="card">
+        {% if item.cover_art_url %}
+        <img src="{{ item.cover_art_url }}" alt="{{ item.album }} cover">
+        {% else %}
+        <div class="cover-placeholder"></div>
+        {% endif %}
+        <strong>{{ item.album }}</strong><br>
+        {{ item.artist }}<br>
+        <form method="post" action="/listen">
+            <input type="hidden" name="collection_id" value="{{ item.id }}">
+            <button type="submit">This one</button>
+        </form>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

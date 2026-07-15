@@ -22,6 +22,7 @@
     <input type="hidden" name="barcode" value="{{ barcode }}">
     <input type="hidden" name="cover_art_url" value="{{ match.cover_art_url or '' }}">
     <input type="hidden" name="musicbrainz_id" value="{{ match.musicbrainz_id or '' }}">
+    <input type="hidden" name="discogs_id" value="{{ match.discogs_id or '' }}">
     <button type="submit">Confirm &amp; save</button>
 </form>
 {% elif no_match %}

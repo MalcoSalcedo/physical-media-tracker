@@ -55,6 +55,7 @@ def create_item(
     barcode: str | None = Form(None),
     cover_art_url: str | None = Form(None),
     musicbrainz_id: str | None = Form(None),
+    discogs_id: str | None = Form(None),
 ):
     with get_connection() as conn:
         catalog.save_item(
@@ -65,5 +66,36 @@ def create_item(
             barcode=barcode or None,
             cover_art_url=cover_art_url or None,
             musicbrainz_id=musicbrainz_id or None,
+            discogs_id=discogs_id or None,
         )
     return RedirectResponse("/collection", status_code=303)
+
+
+@app.get("/listen")
+def listen_form(request: Request):
+    with get_connection() as conn:
+        items = catalog.list_items(conn)
+    return templates.TemplateResponse(request, "listen.html", {"items": items})
+
+
+@app.post("/listen")
+def select_album(collection_id: int = Form(...)):
+    with get_connection() as conn:
+        item = catalog.get_item(conn, collection_id)
+        tracks = catalog.get_tracks(conn, collection_id)
+        if not tracks:
+            tracks = catalog.fetch_tracklist(item)
+            if tracks:
+                catalog.save_tracks(conn, collection_id, tracks)
+        catalog.set_active_album(conn, collection_id)
+    return RedirectResponse("/now-playing", status_code=303)
+
+
+@app.get("/now-playing")
+def now_playing(request: Request):
+    with get_connection() as conn:
+        current = catalog.get_now_playing(conn)
+        tracks = catalog.get_tracks(conn, current["collection_id"]) if current else []
+    return templates.TemplateResponse(
+        request, "now_playing.html", {"current": current, "tracks": tracks}
+    )

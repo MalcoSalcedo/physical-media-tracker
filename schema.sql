@@ -8,7 +8,20 @@ CREATE TABLE IF NOT EXISTS collection (
     barcode        TEXT UNIQUE,
     cover_art_url  TEXT,
     musicbrainz_id TEXT,
+    discogs_id     TEXT,
     date_added     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Per-album tracklist, fetched from Discogs/MusicBrainz release detail when
+-- an album is selected as "now listening" (see ADR-002).
+CREATE TABLE IF NOT EXISTS tracks (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    collection_id    INTEGER NOT NULL REFERENCES collection(id) ON DELETE CASCADE,
+    sort_order       INTEGER NOT NULL,
+    position         TEXT,
+    title            TEXT NOT NULL,
+    duration_seconds INTEGER,
+    UNIQUE (collection_id, sort_order)
 );
 
 -- Single-row table: id is always 1, holds whatever is currently playing.
