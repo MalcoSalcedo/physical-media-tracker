@@ -25,7 +25,7 @@ Ordered task checklist for building the project and documenting it for a portfol
 - [x] If no match found, show a manual-entry form (title/artist/format) instead of failing
 - [x] Build a simple web form: text input for barcode → submit → confirms match → saves to `collection`
 - [x] Build `GET /collection` page: grid/list view with cover art
-- [ ] Manually catalog your shelf using the form — this is your seed data
+- [x] Manually catalog your shelf using the form — this is your seed data
 - [x] Write tests for the lookup + fallback logic
 - [x] DEVLOG entry: what worked, what barcodes didn't match, how you handled it
 
