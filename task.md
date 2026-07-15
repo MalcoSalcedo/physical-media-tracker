@@ -27,7 +27,7 @@ Ordered task checklist for building the project and documenting it for a portfol
 - [x] Build `GET /collection` page: grid/list view with cover art
 - [ ] Manually catalog your shelf using the form — this is your seed data
 - [x] Write tests for the lookup + fallback logic
-- [ ] DEVLOG entry: what worked, what barcodes didn't match, how you handled it
+- [x] DEVLOG entry: what worked, what barcodes didn't match, how you handled it
 
 ## Phase 2 — Now-playing / audio ID MVP
 
