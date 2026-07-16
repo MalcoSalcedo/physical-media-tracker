@@ -15,12 +15,13 @@ CREATE TABLE IF NOT EXISTS collection (
 -- Per-album tracklist, fetched from Discogs/MusicBrainz release detail when
 -- an album is selected as "now listening" (see ADR-002).
 CREATE TABLE IF NOT EXISTS tracks (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    collection_id    INTEGER NOT NULL REFERENCES collection(id) ON DELETE CASCADE,
-    sort_order       INTEGER NOT NULL,
-    position         TEXT,
-    title            TEXT NOT NULL,
-    duration_seconds INTEGER,
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    collection_id      INTEGER NOT NULL REFERENCES collection(id) ON DELETE CASCADE,
+    sort_order         INTEGER NOT NULL,
+    position           TEXT,
+    title              TEXT NOT NULL,
+    duration_seconds   INTEGER,
+    cached_fingerprint TEXT,
     UNIQUE (collection_id, sort_order)
 );
 

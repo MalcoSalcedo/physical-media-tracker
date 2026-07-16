@@ -1,6 +1,6 @@
 import sqlite3
 
-from app import discogs, musicbrainz
+from app import discogs, local_match, musicbrainz
 
 
 def lookup_barcode(barcode: str) -> dict | None:
@@ -88,6 +88,45 @@ def set_active_album(conn: sqlite3.Connection, collection_id: int) -> None:
         (collection_id,),
     )
     conn.commit()
+
+
+def save_track_fingerprint(
+    conn: sqlite3.Connection, collection_id: int, track_title: str, raw_fingerprint: list[int]
+) -> None:
+    """Cache a confirmed track's own-mic fingerprint for fast local re-matching."""
+    conn.execute(
+        "UPDATE tracks SET cached_fingerprint = ? WHERE collection_id = ? AND title = ?",
+        (local_match.encode_fingerprint(raw_fingerprint), collection_id, track_title),
+    )
+    conn.commit()
+
+
+def find_cached_match(
+    conn: sqlite3.Connection,
+    collection_id: int,
+    raw_fingerprint: list[int],
+    min_similarity: float = 0.5,
+) -> str | None:
+    """Compare a freshly recorded clip against this album's cached fingerprints.
+
+    Avoids AcoustID entirely when it hits: both sides of the comparison
+    went through the same mic/room, so repeat plays of the same disc
+    should score far more similar to each other than a mic recording ever
+    would against a clean studio master.
+    """
+    rows = conn.execute(
+        "SELECT title, cached_fingerprint FROM tracks "
+        "WHERE collection_id = ? AND cached_fingerprint IS NOT NULL",
+        (collection_id,),
+    ).fetchall()
+
+    best: tuple[float, str] | None = None
+    for row in rows:
+        cached = local_match.decode_fingerprint(row["cached_fingerprint"])
+        score = local_match.similarity(raw_fingerprint, cached)
+        if score >= min_similarity and (best is None or score > best[0]):
+            best = (score, row["title"])
+    return best[1] if best else None
 
 
 def get_now_playing(conn: sqlite3.Connection) -> sqlite3.Row | None:

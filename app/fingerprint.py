@@ -1,3 +1,6 @@
+import json
+import os
+import subprocess
 import tempfile
 import wave
 from pathlib import Path
@@ -5,6 +8,9 @@ from pathlib import Path
 import acoustid
 import numpy as np
 import sounddevice as sd
+
+FPCALC_ENVVAR = "FPCALC"
+FPCALC_COMMAND = "fpcalc"
 
 
 def record_clip(duration_seconds: float, sample_rate: int = 44100, device: int | None = None) -> np.ndarray:
@@ -43,3 +49,24 @@ def identify_clip(samples: np.ndarray, sample_rate: int, api_key: str) -> list[t
         wav_path = Path(tmpdir) / "clip.wav"
         _write_wav(samples, sample_rate, wav_path)
         return list(acoustid.match(api_key, str(wav_path), force_fpcalc=True))
+
+
+def raw_fingerprint(samples: np.ndarray, sample_rate: int) -> list[int]:
+    """Fingerprint a clip as a raw (uncompressed) list of integers.
+
+    Used for local fingerprint comparison (app.local_match), which doesn't
+    need the AcoustID service at all - just fpcalc's own `-raw` output,
+    which sidesteps needing the separate libchromaprint shared library
+    that decoding a *compressed* fingerprint would require.
+    """
+    fpcalc = os.environ.get(FPCALC_ENVVAR, FPCALC_COMMAND)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        wav_path = Path(tmpdir) / "clip.wav"
+        _write_wav(samples, sample_rate, wav_path)
+        output = subprocess.run(
+            [fpcalc, "-raw", "-json", str(wav_path)],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    return json.loads(output)["fingerprint"]
