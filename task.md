@@ -46,7 +46,7 @@ single blind fingerprint-and-poll loop.
       detail endpoints when an album is selected
 - [x] Build "select album to listen to" UI + endpoint; stores the active
       album context for the listener to use
-- [ ] Build a silence/gap detector (RMS-based), standalone and unit-tested
+- [x] Build a silence/gap detector (RMS-based), standalone and unit-tested
       against synthetic signals, independent of fingerprinting
 - [ ] Build album-constrained fuzzy matching: capture a ~30s clip → fpcalc →
       AcoustID lookup → accept a lower-confidence match if its title
