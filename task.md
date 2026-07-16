@@ -54,7 +54,7 @@ single blind fingerprint-and-poll loop.
 - [x] Build a local fingerprint cache: store a confirmed track's own-mic
       fingerprint; compare against the cache before calling AcoustID on
       repeat plays of the same album
-- [ ] Build progressive/adaptive clip length fallback (30s → 60s → 90s) for
+- [x] Build progressive/adaptive clip length fallback (30s → 60s → 90s) for
       when a short clip returns no usable candidate
 - [ ] Write `listener.py`: orchestrates gap detection → local cache lookup →
       album-constrained fuzzy AcoustID match → duration-timer advance
