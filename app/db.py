@@ -13,6 +13,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(collection)")}
         if "discogs_id" not in columns:
             conn.execute("ALTER TABLE collection ADD COLUMN discogs_id TEXT")
+    if "tracks" in tables:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(tracks)")}
+        if "cached_fingerprint" not in columns:
+            conn.execute("ALTER TABLE tracks ADD COLUMN cached_fingerprint TEXT")
 
 
 def init_db(db_path: Path = DB_PATH) -> None:

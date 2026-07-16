@@ -51,7 +51,7 @@ single blind fingerprint-and-poll loop.
 - [x] Build album-constrained fuzzy matching: capture a ~30s clip → fpcalc →
       AcoustID lookup → accept a lower-confidence match if its title
       fuzzy-matches a track on the active album
-- [ ] Build a local fingerprint cache: store a confirmed track's own-mic
+- [x] Build a local fingerprint cache: store a confirmed track's own-mic
       fingerprint; compare against the cache before calling AcoustID on
       repeat plays of the same album
 - [ ] Build progressive/adaptive clip length fallback (30s → 60s → 90s) for

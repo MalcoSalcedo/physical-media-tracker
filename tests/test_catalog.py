@@ -161,3 +161,40 @@ def test_set_active_album_overwrites_previous_selection(conn):
 
     assert current["collection_id"] == second_id
     assert current["album"] == "Album B"
+
+
+def test_find_cached_match_returns_none_when_nothing_cached(conn):
+    item_id = catalog.save_item(conn, artist="Radiohead", album="In Rainbows", format="Vinyl")
+    catalog.save_tracks(conn, item_id, [{"title": "15 Step"}, {"title": "Bodysnatchers"}])
+
+    assert catalog.find_cached_match(conn, item_id, [1, 2, 3]) is None
+
+
+def test_save_and_find_cached_fingerprint_roundtrip(conn):
+    item_id = catalog.save_item(conn, artist="Radiohead", album="In Rainbows", format="Vinyl")
+    catalog.save_tracks(conn, item_id, [{"title": "15 Step"}, {"title": "Bodysnatchers"}])
+
+    fp = [10, 20, 30, 40, 50]
+    catalog.save_track_fingerprint(conn, item_id, "15 Step", fp)
+
+    assert catalog.find_cached_match(conn, item_id, fp) == "15 Step"
+
+
+def test_find_cached_match_picks_best_of_multiple_cached_tracks(conn):
+    item_id = catalog.save_item(conn, artist="Radiohead", album="In Rainbows", format="Vinyl")
+    catalog.save_tracks(conn, item_id, [{"title": "15 Step"}, {"title": "Bodysnatchers"}])
+
+    fp_a = [1, 2, 3, 4, 5, 6, 7, 8]
+    fp_b = [100, 200, 300, 400, 500, 600, 700, 800]
+    catalog.save_track_fingerprint(conn, item_id, "15 Step", fp_a)
+    catalog.save_track_fingerprint(conn, item_id, "Bodysnatchers", fp_b)
+
+    assert catalog.find_cached_match(conn, item_id, fp_b) == "Bodysnatchers"
+
+
+def test_find_cached_match_rejects_dissimilar_fingerprint(conn):
+    item_id = catalog.save_item(conn, artist="Radiohead", album="In Rainbows", format="Vinyl")
+    catalog.save_tracks(conn, item_id, [{"title": "15 Step"}])
+    catalog.save_track_fingerprint(conn, item_id, "15 Step", [1, 2, 3, 4, 5])
+
+    assert catalog.find_cached_match(conn, item_id, [999999, 888888, 777777]) is None
