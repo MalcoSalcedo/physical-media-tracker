@@ -48,7 +48,7 @@ single blind fingerprint-and-poll loop.
       album context for the listener to use
 - [x] Build a silence/gap detector (RMS-based), standalone and unit-tested
       against synthetic signals, independent of fingerprinting
-- [ ] Build album-constrained fuzzy matching: capture a ~30s clip → fpcalc →
+- [x] Build album-constrained fuzzy matching: capture a ~30s clip → fpcalc →
       AcoustID lookup → accept a lower-confidence match if its title
       fuzzy-matches a track on the active album
 - [ ] Build a local fingerprint cache: store a confirmed track's own-mic
