@@ -56,16 +56,16 @@ single blind fingerprint-and-poll loop.
       repeat plays of the same album
 - [x] Build progressive/adaptive clip length fallback (30s → 60s → 90s) for
       when a short clip returns no usable candidate
-- [ ] Write `listener.py`: orchestrates gap detection → local cache lookup →
+- [x] Write `listener.py`: orchestrates gap detection → local cache lookup →
       album-constrained fuzzy AcoustID match → duration-timer advance
       between checks
-- [ ] On match, update `now_playing` row and append to `history`
-- [ ] Turn `listener.py` into a `systemd` service (`listener.service`) so it
+- [x] On match, update `now_playing` row and append to `history`
+- [x] Turn `listener.py` into a `systemd` service (`listener.service`) so it
       runs headless on boot
-- [ ] Add `GET /now-playing` endpoint + banner on the web page
+- [x] Add `GET /now-playing` endpoint + banner on the web page
 - [ ] Test with real CD player audio via line-in (Focusrite) at normal
       listening volume; tune clip length/interval/thresholds
-- [ ] Write tests for the matching logic (gap detector, fuzzy matcher,
+- [x] Write tests for the matching logic (gap detector, fuzzy matcher,
       duration timer — mock AcoustID responses)
 - [ ] DEVLOG entry: fingerprinting accuracy, false positives/negatives,
       tuning notes
