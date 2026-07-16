@@ -198,3 +198,29 @@ def test_find_cached_match_rejects_dissimilar_fingerprint(conn):
     catalog.save_track_fingerprint(conn, item_id, "15 Step", [1, 2, 3, 4, 5])
 
     assert catalog.find_cached_match(conn, item_id, [999999, 888888, 777777]) is None
+
+
+def test_update_current_track_sets_now_playing_and_appends_history(conn):
+    item_id = catalog.save_item(conn, artist="Radiohead", album="In Rainbows", format="Vinyl")
+    catalog.set_active_album(conn, item_id)
+
+    catalog.update_current_track(conn, item_id, "15 Step", "fingerprint")
+    current = catalog.get_now_playing(conn)
+    history = conn.execute("SELECT * FROM history").fetchall()
+
+    assert current["track_title"] == "15 Step"
+    assert current["source"] == "fingerprint"
+    assert len(history) == 1
+    assert history[0]["track_title"] == "15 Step"
+
+
+def test_update_current_track_appends_separate_history_row_per_track(conn):
+    item_id = catalog.save_item(conn, artist="Radiohead", album="In Rainbows", format="Vinyl")
+    catalog.set_active_album(conn, item_id)
+
+    catalog.update_current_track(conn, item_id, "15 Step", "fingerprint")
+    catalog.update_current_track(conn, item_id, "Bodysnatchers", "fingerprint")
+
+    history = conn.execute("SELECT track_title FROM history ORDER BY id").fetchall()
+    assert [h["track_title"] for h in history] == ["15 Step", "Bodysnatchers"]
+    assert catalog.get_now_playing(conn)["track_title"] == "Bodysnatchers"

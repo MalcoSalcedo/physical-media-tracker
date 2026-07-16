@@ -94,3 +94,48 @@ Next up: build the pieces in `task.md`'s revised Phase 2 list, then
 validate against real CD player audio via the Focusrite line-in instead of
 the mic — the mic path is a reasonable fallback but the line-in should be
 materially more reliable, and it's hardware I already own.
+
+## 2026-07-16 — Phase 2 built out: all five ADR-002 layers, plus a real timezone bug
+
+Built every piece from ADR-002's layered design, each as its own PR: album
+selection + tracklist fetching (`/listen`, `/now-playing`, Discogs/
+MusicBrainz release-detail lookups), the RMS-based gap detector, album-
+constrained fuzzy matching (`track_matcher.match_against_album`), a local
+fingerprint cache, progressive cache-first/fuzzy-match identification with
+escalating clip length, and finally `listener.py` tying all of it into an
+actual polling loop with duration-timer track advancement.
+
+**Two real bugs worth remembering:**
+
+- Comparing two Chromaprint fingerprints for the local cache needs
+  `libchromaprint`'s decode function, which needs the shared library - not
+  just the standalone `fpcalc.exe` this project already had installed.
+  Rather than chase down a separate DLL, `fpcalc -raw` turned out to give
+  the same raw integer fingerprint directly, so `app/local_match.py`
+  reimplements Chromaprint's own alignment-based comparison in pure Python
+  against that. Verified against real `fpcalc` output: a fingerprint
+  compared against itself scores 1.0, two different segments of the same
+  real song score near zero (0.03).
+- `listener.py`'s duration-timer logic compares `now` against `started_at`,
+  which comes from SQLite's `datetime('now')` - which is UTC. My first pass
+  used Python's local `datetime.now()` for the comparison. On this machine
+  that's a 7-hour offset, which would have made track-advancement timing
+  silently wrong in a way that's easy to miss by eye and easy to introduce
+  again elsewhere. A test comparing "same track, 5 minutes later" against
+  "same track, 10 seconds later" caught it immediately - concrete evidence
+  for why the escalating/timer logic got real unit tests instead of only
+  being checked by hand.
+- Also hit a CI-only failure: `sounddevice` needs the system PortAudio
+  library, which isn't on the GitHub Actions runner by default. Every
+  earlier PR happened to avoid importing `app.fingerprint` from any test
+  file, so this didn't surface until the first test that did. Fixed with
+  an `apt-get install libportaudio2` step in the CI workflow.
+
+Still open: real CD player audio via the Focusrite line-in hasn't happened
+yet - everything so far is verified against the mic and against clean
+files, which is a different (probably easier) case than a physical CD
+player at real listening volume. That's the next real test, and it's the
+one that'll actually tell us whether the similarity/confidence thresholds
+picked so far (gap detector's silence threshold, the fuzzy matcher's
+score floors, the local cache's similarity floor) are anywhere close to
+right.

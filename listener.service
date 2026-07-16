@@ -1,0 +1,15 @@
+[Unit]
+Description=Physical Media Tracker - now-playing listener
+After=sound.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pi/physical-media-tracker
+EnvironmentFile=/home/pi/physical-media-tracker/.env
+ExecStart=/home/pi/physical-media-tracker/.venv/bin/python listener.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

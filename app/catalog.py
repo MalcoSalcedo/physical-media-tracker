@@ -129,6 +129,24 @@ def find_cached_match(
     return best[1] if best else None
 
 
+def update_current_track(
+    conn: sqlite3.Connection, collection_id: int, track_title: str, source: str
+) -> None:
+    """Set the identified/advanced track as now playing and log it to history."""
+    conn.execute(
+        """
+        UPDATE now_playing SET track_title = ?, started_at = datetime('now'), source = ?
+        WHERE id = 1 AND collection_id = ?
+        """,
+        (track_title, source, collection_id),
+    )
+    conn.execute(
+        "INSERT INTO history (collection_id, track_title) VALUES (?, ?)",
+        (collection_id, track_title),
+    )
+    conn.commit()
+
+
 def get_now_playing(conn: sqlite3.Connection) -> sqlite3.Row | None:
     return conn.execute(
         """
