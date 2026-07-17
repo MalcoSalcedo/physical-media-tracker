@@ -63,11 +63,11 @@ single blind fingerprint-and-poll loop.
 - [x] Turn `listener.py` into a `systemd` service (`listener.service`) so it
       runs headless on boot
 - [x] Add `GET /now-playing` endpoint + banner on the web page
-- [ ] Test with real CD player audio via line-in (Focusrite) at normal
+- [x] Test with real CD player audio via line-in (Focusrite) at normal
       listening volume; tune clip length/interval/thresholds
 - [x] Write tests for the matching logic (gap detector, fuzzy matcher,
       duration timer — mock AcoustID responses)
-- [ ] DEVLOG entry: fingerprinting accuracy, false positives/negatives,
+- [x] DEVLOG entry: fingerprinting accuracy, false positives/negatives,
       tuning notes
 
 ## Phase 3 — Web UI polish
