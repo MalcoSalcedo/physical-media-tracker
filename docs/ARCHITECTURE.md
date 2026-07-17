@@ -58,6 +58,14 @@ No physical display is required for the MVP — "now playing" is meant to be see
 
 ## 3. Audio identification pipeline
 
+> **Note (2026-07-16):** this section is the original plan, kept here for
+> the historical record. Empirical testing during Phase 2 showed short
+> clips (<90s) are unreliable for AcoustID lookups regardless of signal
+> quality, so the pipeline actually built is more layered than what's
+> described below. See [`docs/adr/ADR-002`](adr/ADR-002) for why, and
+> [`docs/AUDIO_PIPELINE.md`](AUDIO_PIPELINE.md) for how the real system
+> works end to end.
+
 1. A background daemon on the Pi continuously samples audio from the mic (or line-in) in short windows (e.g., 12–15 seconds every couple of minutes, or continuously if CPU allows).
 2. Each clip is fingerprinted with **Chromaprint** (`fpcalc`), the same open-source library behind AcoustID/MusicBrainz.
 3. The fingerprint is sent to the **AcoustID API** (free, open), which returns a MusicBrainz recording match: artist, track, album.
