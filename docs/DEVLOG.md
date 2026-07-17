@@ -139,3 +139,51 @@ one that'll actually tell us whether the similarity/confidence thresholds
 picked so far (gap detector's silence threshold, the fuzzy matcher's
 score floors, the local cache's similarity floor) are anywhere close to
 right.
+
+## 2026-07-16 (cont.) — First real line-in test: one clean miss, one clean hit
+
+Wired the CD player into the Focusrite for real. First attempt used the
+wrong port entirely - the obvious-looking "R/L" terminals on the back are
+speaker-level output (this is an all-in-one micro system with the amp
+built in), not line-level, and would have fed way too hot a signal into
+the interface's line input. Found the actual "PHONES" jack on the side
+panel instead - a proper line-level output with its own volume control,
+the safe and correct way to do this. Worth remembering for anyone doing
+this with a similar compact system: check for a headphone jack before
+assuming the visible rear terminals are usable.
+
+Signal quality through the real connection was excellent - 45-50% peak
+level, zero clipping, clean full-bandwidth spectrum, no DC offset. Much
+stronger and cleaner than any mic recording so far.
+
+**The miss:** a 90-second recording of "Come Together" (Abbey Road, track
+1) - confirmed by ear to be a clean, correct, fully audible recording of
+the right song - returned **zero** results from AcoustID's raw lookup.
+Not a low-confidence miss, not a title-mismatch, an empty result set.
+Swept every window from 15s to 90s, at multiple offsets, all zero. Ruled
+out a technical capture problem first (0% clipping, negligible DC offset,
+33% of energy above 5kHz - a healthy, unfiltered signal), so this wasn't
+our recording chain's fault. Most likely explanation: this specific CD's
+mix/mastering (the Beatles catalog has several distinct official
+remasters with real mixing differences) doesn't line up with whatever
+fingerprints exist in AcoustID's database for this recording. A genuinely
+humbling result - even one of the most famous recordings ever made isn't
+guaranteed to match, because fingerprint matching cares about the exact
+mix, not just "is this a well-known song."
+
+**The hit:** swapped to Electric Ladyland and got a clean match on the
+first try - "...And the Gods Made Love" (correctly, track 1) at 0.78-0.79
+confidence, through the *entire* real pipeline end to end: line-in
+recording → fpcalc → AcoustID → `track_matcher.match_against_album`
+against the real stored tracklist → `now_playing` updated with
+`source='fingerprint'` → local fingerprint cache populated for next time.
+
+**Tuning conclusion for now:** the Abbey Road miss isn't a threshold
+problem to tune away - no duration or offset produced any result at all,
+so there was nothing to fuzzy-match against in the first place. The
+Electric Ladyland hit validates the pipeline and thresholds as currently
+configured need no immediate change. The practical implication: some
+specific discs may just never match via AcoustID regardless of tuning,
+and the local fingerprint cache (once a track is identified by any means)
+is what makes repeat plays of exactly those discs reliable going forward
+- this is a real, not just theoretical, reason that layer exists.
