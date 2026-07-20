@@ -72,10 +72,10 @@ single blind fingerprint-and-poll loop.
 
 ## Phase 3 — Web UI polish
 
-- [ ] Clean up collection grid (cover art, sort/filter by artist/format)
-- [ ] Now-playing banner with cover art + "last updated"
-- [ ] Recently-played history list
-- [ ] Basic responsive styling (doesn't need to be fancy — functional and clean)
+- [x] Clean up collection grid (cover art, sort/filter by artist/format)
+- [x] Now-playing banner with cover art + "last updated"
+- [x] Recently-played history list
+- [x] Basic responsive styling (doesn't need to be fancy — functional and clean)
 - [ ] Screenshot or short screen recording for the README
 
 ## Phase 4 — Public sharing

@@ -34,8 +34,32 @@ def save_item(
     return cursor.lastrowid
 
 
-def list_items(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    return conn.execute("SELECT * FROM collection ORDER BY date_added DESC").fetchall()
+SORT_OPTIONS = {
+    # id DESC as a tiebreaker: date_added only has second precision, so items
+    # added within the same second would otherwise sort ambiguously.
+    "date_added": "date_added DESC, id DESC",
+    "artist": "artist ASC, album ASC",
+    "album": "album ASC",
+}
+DEFAULT_SORT = "date_added"
+
+
+def list_items(
+    conn: sqlite3.Connection, sort: str = DEFAULT_SORT, format_filter: str | None = None
+) -> list[sqlite3.Row]:
+    order_by = SORT_OPTIONS.get(sort, SORT_OPTIONS[DEFAULT_SORT])
+    query = "SELECT * FROM collection"
+    params: tuple = ()
+    if format_filter:
+        query += " WHERE format = ?"
+        params = (format_filter,)
+    query += f" ORDER BY {order_by}"
+    return conn.execute(query, params).fetchall()
+
+
+def list_formats(conn: sqlite3.Connection) -> list[str]:
+    rows = conn.execute("SELECT DISTINCT format FROM collection ORDER BY format").fetchall()
+    return [row["format"] for row in rows]
 
 
 def get_item(conn: sqlite3.Connection, collection_id: int) -> sqlite3.Row | None:
@@ -145,6 +169,19 @@ def update_current_track(
         (collection_id, track_title),
     )
     conn.commit()
+
+
+def get_recent_history(conn: sqlite3.Connection, limit: int = 20) -> list[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT history.track_title, history.played_at, collection.artist, collection.album
+        FROM history
+        JOIN collection ON collection.id = history.collection_id
+        ORDER BY history.played_at DESC, history.id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
 
 
 def get_now_playing(conn: sqlite3.Connection) -> sqlite3.Row | None:
