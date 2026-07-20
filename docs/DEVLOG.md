@@ -187,3 +187,44 @@ specific discs may just never match via AcoustID regardless of tuning,
 and the local fingerprint cache (once a track is identified by any means)
 is what makes repeat plays of exactly those discs reliable going forward
 - this is a real, not just theoretical, reason that layer exists.
+
+## 2026-07-20 — Second real-world test: a new miss, and a real cataloging bug
+
+Cataloged a new CD (Deftones - *White Pony*) live and ran it through the
+full flow: `/add` → `/listen` → `listener.py` running against the
+Focusrite line-in. Let it run for ~8 minutes across two full
+identification cycles. No match, ever - `now_playing.track_title` stayed
+`None` the whole time.
+
+Same diagnostic approach as the Abbey Road miss: recorded a fresh 90s
+clip directly, confirmed by ear it was clean and correctly "Feiticeira,"
+checked for clipping/DC offset/spectral anomalies (all clean, same as
+before), then hit the raw AcoustID API directly. Zero results, across
+every window length from 15-90s. Second miss out of three real CDs
+tried so far - one real hit (Electric Ladyland), two misses (Abbey Road,
+White Pony), both on otherwise very famous, heavily-covered songs.
+
+**A genuinely different, fixable bug surfaced along the way:** the user
+noticed their physical disc's tracklist (opens with "Back To School
+(Mini Maggit)") didn't match what was cataloged (opened with
+"Feiticeira"). Traced it: Discogs returns **16 different release
+entries** for this exact barcode - reissues/represses commonly reuse the
+same printed UPC as the original pressing. `discogs.search_by_barcode()`
+just takes `results[0]`, so it grabbed the original 2000 pressing
+instead of the reissue the barcode actually came from. Fixed the
+specific catalog entry by hand (found the right release ID by checking
+which of the 16 candidates had the right first track, then re-fetched
+its tracklist) - but the underlying `search_by_barcode` behavior (no
+disambiguation when a barcode maps to multiple releases) is still there
+for future scans. Worth revisiting if it comes up again, though there's
+no obviously correct heuristic to prefer one release over another
+without more signal than the API gives.
+
+Worth noting for accuracy: initially guessed the tracklist mismatch
+itself might explain the zero AcoustID results (different mix on the
+reissue). Checked and ruled that out - the reissue's "Feiticeira" has
+the *exact same duration* (3:09) as the original pressing's, so it's
+very likely the same master, just with a bonus track prepended. The
+fuzzy matcher is title-based anyway, not position-based, so a tracklist
+mismatch wouldn't have blocked a match if AcoustID had found one. The
+zero-result cause here remains the same open question as Abbey Road.
