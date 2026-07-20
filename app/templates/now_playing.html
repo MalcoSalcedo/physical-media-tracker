@@ -5,21 +5,12 @@
 {% if not current %}
 <p>Nothing selected yet. <a href="/listen">Pick an album</a> to start.</p>
 {% else %}
-<p>
-    {% if current.cover_art_url %}<img src="{{ current.cover_art_url }}" alt="cover" style="max-width:120px"><br>{% endif %}
-    <strong>{{ current.album }}</strong> — {{ current.artist }}
-</p>
-{% if current.track_title %}
-<p>Track: <strong>{{ current.track_title }}</strong></p>
-{% else %}
-<p><em>Waiting to identify the current track...</em></p>
-{% endif %}
 
 {% if tracks %}
 <h2>Tracklist</h2>
 <ol>
     {% for track in tracks %}
-    <li {% if track.title == current.track_title %}style="font-weight:bold"{% endif %}>
+    <li {% if track.title == current.track_title %}style="color:var(--accent);font-weight:600"{% endif %}>
         {{ track.title }}
         {% if track.duration_seconds %}({{ (track.duration_seconds // 60) }}:{{ '%02d' % (track.duration_seconds % 60) }}){% endif %}
     </li>
@@ -27,5 +18,23 @@
 </ol>
 {% endif %}
 <p><a href="/listen">Switch album</a></p>
+{% endif %}
+
+{% if history %}
+<h2>Recently played</h2>
+<table>
+    <thead>
+        <tr><th>Track</th><th>Album</th><th>When</th></tr>
+    </thead>
+    <tbody>
+        {% for entry in history %}
+        <tr>
+            <td>{{ entry.track_title }}</td>
+            <td>{{ entry.artist }} — {{ entry.album }}</td>
+            <td>{{ entry.played_at | timeago }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
 {% endif %}
 {% endblock %}

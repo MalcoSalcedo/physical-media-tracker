@@ -2,17 +2,115 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Physical Media Tracker{% endblock %}</title>
     <style>
-        body { font-family: system-ui, sans-serif; max-width: 700px; margin: 2rem auto; padding: 0 1rem; }
-        nav a { margin-right: 1rem; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 1rem; }
-        .card { text-align: center; }
-        .card img { max-width: 100%; }
-        .cover-placeholder { width: 100%; aspect-ratio: 1; background: #ddd; }
+        :root {
+            --bg: #f7f7f8;
+            --surface: #ffffff;
+            --text: #1a1a1a;
+            --muted: #6b6b6b;
+            --border: #e2e2e2;
+            --accent: #3b5bdb;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #16161a;
+                --surface: #1f1f24;
+                --text: #f0f0f0;
+                --muted: #9a9a9a;
+                --border: #33333a;
+                --accent: #7c94ff;
+            }
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            font-family: system-ui, sans-serif;
+            max-width: 760px;
+            margin: 0 auto;
+            padding: 0 1rem 2rem;
+            background: var(--bg);
+            color: var(--text);
+        }
+        a { color: var(--accent); }
+
+        nav {
+            display: flex;
+            gap: 1.25rem;
+            padding: 1.25rem 0;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+        }
+        nav a { text-decoration: none; font-weight: 600; }
+        nav a:hover { text-decoration: underline; }
+
+        .banner {
+            display: flex;
+            align-items: center;
+            gap: 0.9rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 0.6rem;
+            padding: 0.75rem 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .banner img { width: 48px; height: 48px; object-fit: cover; border-radius: 0.35rem; }
+        .banner .cover-placeholder { width: 48px; height: 48px; flex-shrink: 0; }
+        .banner-title { font-weight: 600; }
+        .banner-sub { color: var(--muted); font-size: 0.9rem; }
+        .banner-time { color: var(--muted); font-size: 0.8rem; margin-left: auto; white-space: nowrap; }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 1.25rem;
+        }
+        .card {
+            text-align: center;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 0.6rem;
+            padding: 0.75rem;
+        }
+        .card img { max-width: 100%; border-radius: 0.35rem; }
+        .cover-placeholder { width: 100%; aspect-ratio: 1; background: var(--border); border-radius: 0.35rem; }
+
+        .controls { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+        .controls label { font-size: 0.9rem; color: var(--muted); }
+        select, input[type=text] {
+            font: inherit;
+            padding: 0.4rem 0.5rem;
+            border: 1px solid var(--border);
+            border-radius: 0.4rem;
+            background: var(--surface);
+            color: var(--text);
+        }
+
         form.stacked label { display: block; margin-top: 0.75rem; }
-        form.stacked input { width: 100%; padding: 0.4rem; }
-        button { margin-top: 1rem; padding: 0.5rem 1rem; }
+        form.stacked input { width: 100%; padding: 0.5rem; margin-top: 0.25rem; }
+        button {
+            margin-top: 1rem;
+            padding: 0.55rem 1.1rem;
+            border: none;
+            border-radius: 0.4rem;
+            background: var(--accent);
+            color: #fff;
+            font: inherit;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        button:hover { opacity: 0.9; }
+
+        table { width: 100%; border-collapse: collapse; }
+        table th, table td {
+            text-align: left;
+            padding: 0.5rem 0.4rem;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.95rem;
+        }
+        table th { color: var(--muted); font-weight: 600; }
     </style>
 </head>
 <body>
@@ -22,7 +120,22 @@
         <a href="/listen">Listen</a>
         <a href="/now-playing">Now playing</a>
     </nav>
-    <hr>
+
+    {% if global_now_playing %}
+    <div class="banner">
+        {% if global_now_playing.cover_art_url %}
+        <img src="{{ global_now_playing.cover_art_url }}" alt="cover">
+        {% else %}
+        <div class="cover-placeholder"></div>
+        {% endif %}
+        <div>
+            <div class="banner-title">{{ global_now_playing.track_title or "Nothing identified yet" }}</div>
+            <div class="banner-sub">{{ global_now_playing.artist }} — {{ global_now_playing.album }}</div>
+        </div>
+        <div class="banner-time">{{ global_now_playing.started_at | timeago }}</div>
+    </div>
+    {% endif %}
+
     {% block content %}{% endblock %}
 </body>
 </html>

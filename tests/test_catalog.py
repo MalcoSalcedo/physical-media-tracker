@@ -224,3 +224,58 @@ def test_update_current_track_appends_separate_history_row_per_track(conn):
     history = conn.execute("SELECT track_title FROM history ORDER BY id").fetchall()
     assert [h["track_title"] for h in history] == ["15 Step", "Bodysnatchers"]
     assert catalog.get_now_playing(conn)["track_title"] == "Bodysnatchers"
+
+
+def test_list_items_default_sort_is_most_recently_added_first(conn):
+    catalog.save_item(conn, artist="Artist A", album="Album A", format="CD")
+    catalog.save_item(conn, artist="Artist B", album="Album B", format="CD")
+
+    items = catalog.list_items(conn)
+    assert [i["album"] for i in items] == ["Album B", "Album A"]
+
+
+def test_list_items_sort_by_artist(conn):
+    catalog.save_item(conn, artist="Zed", album="Z Album", format="CD")
+    catalog.save_item(conn, artist="Amy", album="A Album", format="CD")
+
+    items = catalog.list_items(conn, sort="artist")
+    assert [i["artist"] for i in items] == ["Amy", "Zed"]
+
+
+def test_list_items_filters_by_format(conn):
+    catalog.save_item(conn, artist="Artist A", album="CD Album", format="CD")
+    catalog.save_item(conn, artist="Artist B", album="Vinyl Album", format="Vinyl")
+
+    items = catalog.list_items(conn, format_filter="Vinyl")
+    assert [i["album"] for i in items] == ["Vinyl Album"]
+
+
+def test_list_formats_returns_distinct_sorted_formats(conn):
+    catalog.save_item(conn, artist="Artist A", album="A", format="Vinyl")
+    catalog.save_item(conn, artist="Artist B", album="B", format="CD")
+    catalog.save_item(conn, artist="Artist C", album="C", format="CD")
+
+    assert catalog.list_formats(conn) == ["CD", "Vinyl"]
+
+
+def test_get_recent_history_orders_most_recent_first(conn):
+    item_id = catalog.save_item(conn, artist="Radiohead", album="In Rainbows", format="Vinyl")
+    catalog.set_active_album(conn, item_id)
+
+    catalog.update_current_track(conn, item_id, "15 Step", "fingerprint")
+    catalog.update_current_track(conn, item_id, "Bodysnatchers", "fingerprint")
+
+    history = catalog.get_recent_history(conn)
+    assert [h["track_title"] for h in history] == ["Bodysnatchers", "15 Step"]
+    assert history[0]["artist"] == "Radiohead"
+    assert history[0]["album"] == "In Rainbows"
+
+
+def test_get_recent_history_respects_limit(conn):
+    item_id = catalog.save_item(conn, artist="Radiohead", album="In Rainbows", format="Vinyl")
+    catalog.set_active_album(conn, item_id)
+    for title in ["A", "B", "C"]:
+        catalog.update_current_track(conn, item_id, title, "fingerprint")
+
+    history = catalog.get_recent_history(conn, limit=2)
+    assert [h["track_title"] for h in history] == ["C", "B"]

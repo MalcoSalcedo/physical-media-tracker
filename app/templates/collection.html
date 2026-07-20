@@ -2,6 +2,25 @@
 {% block title %}Collection{% endblock %}
 {% block content %}
 <h1>Collection ({{ items|length }})</h1>
+
+<form method="get" action="/collection" class="controls">
+    <label>Sort by
+        <select name="sort" onchange="this.form.submit()">
+            <option value="date_added" {% if sort == "date_added" %}selected{% endif %}>Recently added</option>
+            <option value="artist" {% if sort == "artist" %}selected{% endif %}>Artist</option>
+            <option value="album" {% if sort == "album" %}selected{% endif %}>Album</option>
+        </select>
+    </label>
+    <label>Format
+        <select name="format" onchange="this.form.submit()">
+            <option value="">All formats</option>
+            {% for f in formats %}
+            <option value="{{ f }}" {% if format_filter == f %}selected{% endif %}>{{ f }}</option>
+            {% endfor %}
+        </select>
+    </label>
+</form>
+
 {% if not items %}
 <p>Nothing cataloged yet. <a href="/add">Add your first item</a>.</p>
 {% else %}
