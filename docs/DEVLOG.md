@@ -228,3 +228,50 @@ very likely the same master, just with a bonus track prepended. The
 fuzzy matcher is title-based anyway, not position-based, so a tracklist
 mismatch wouldn't have blocked a match if AcoustID had found one. The
 zero-result cause here remains the same open question as Abbey Road.
+
+## 2026-07-20/21 (cont.) — A full real-world testing round: 1 hit, 5 misses
+
+Kept going with more CDs in the same session, cataloging and testing each
+one live through the Focusrite line-in: Jeff Buckley's *Grace* (tested
+twice - once mid-song, once from a clean track-1 start), Kendrick Lamar's
+*GNX*, and A Tribe Called Quest's *The Low End Theory*. Every one of them
+missed - zero AcoustID results, every duration tried.
+
+That's **1 hit / 5 misses** total across every album tested so far
+(Electric Ladyland the lone success; Abbey Road, White Pony, Grace, GNX,
+The Low End Theory all missed). Before accepting that as the real
+baseline, spent this round specifically trying to rule out anything
+systemic rather than track-specific:
+
+- **API/account health** - re-ran the exact recording that succeeded on
+  day one (the clean Gorillaz MP3) through the same API key. Still a
+  clean 0.97-confidence match. Rules out a broken or rate-limited account.
+- **Recording quality** - every single clip across all five misses came
+  back clean on inspection: no clipping, negligible DC offset, healthy
+  signal levels (44-50% peak, consistent with the one clip that *did*
+  match). This was checked, not assumed, for each one.
+- **Track-boundary contamination** - the CD naturally crosses track
+  boundaries sometimes when a recording starts at an arbitrary point
+  mid-album. Caught this happening twice (a Grace clip that spanned
+  Mojo Pin into the title track, a GNX clip with ~3s of Squabble Up
+  bleeding into Luther) and retested trimmed, single-track-only clips
+  in both cases. Still zero. Ruled out as the cause, at least for the
+  clips tested.
+
+What's left, having eliminated the above, is a genuinely uncomfortable but
+honest conclusion: AcoustID's crowdsourced fingerprint database has real,
+uneven coverage gaps for CD-sourced audio, and they show up more often
+than the one early success suggested. This isn't a pipeline bug - every
+piece (recording, fingerprinting, the API call, the matching logic) is
+verified working correctly. It's a real limitation of depending on a
+community fingerprint database for this specific use case (identifying
+audio from a spinning physical disc via line-in, as opposed to say a
+clean digital rip), and it's worth being upfront about in anything
+written about this project rather than only showcasing the one success.
+
+Given a ~20% real hit rate (1/5) so far, this is worth keeping in mind
+for how the project gets described going forward - not as "identifies
+what's playing" unconditionally, but as "attempts to identify, with real
+limits tied to AcoustID's actual coverage." The local fingerprint cache
+still matters for the discs that do get identified at least once, but it
+doesn't help the discs that never get a first hit at all.
