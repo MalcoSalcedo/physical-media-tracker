@@ -1,0 +1,92 @@
+# ADR-003: Query AcoustID with the candidate track's known duration, not the clip's
+
+## Status
+
+Accepted (2026-07-31)
+
+## Context
+
+Real-world line-in testing (see `DEVLOG.md`, 2026-07-20/21) found a ~20% hit
+rate (1 match out of 5 albums tried) via the Focusrite. Every miss was
+diagnosed the same way: technically clean recording, human-confirmed correct
+track, zero results from AcoustID's raw lookup at every clip length tried
+(15-90s). Track-boundary contamination and API/account health were both
+ruled out directly. The working conclusion in the DEVLOG at the time was
+that this reflected genuine, uneven coverage gaps in AcoustID's crowdsourced
+fingerprint database for CD-sourced audio - a real limitation to design
+around, not a bug to fix.
+
+That conclusion was wrong, and testing against clean digital rips of the
+three specific albums that had failed physically (GNX, Grace, The Low End
+Theory - provided as m4a files) proved it. Fingerprinting those exact
+tracks and sending them to AcoustID's raw lookup API succeeded immediately,
+at 0.96-0.99 confidence. AcoustID has these recordings well-fingerprinted.
+The coverage-gap theory was falsified outright.
+
+Digging into *why* our own pipeline still failed on identical audio led to
+the real mechanism: AcoustID's `duration` parameter in the lookup request
+isn't just metadata - it materially affects matching. Isolated with a
+single fixed fingerprint (same bytes, from a genuinely 60-second real clip
+of "Luther"):
+
+| Declared duration | Result |
+|---|---|
+| 60 (honest, matches the clip) | 0 results |
+| 90, 120, 240, 300 | 0 results |
+| 178 (the track's *true* length, which we already had stored from Discogs) | **0.99 confidence match** |
+
+Only declaring a duration close to the true reference recording's length
+worked - not "any large number," specifically the right ballpark. The same
+pattern held for all three tracks: Mojo Pin (stored: 342s) and Rap Promoter
+(stored: 133s) both matched at 0.96+ confidence once their own stored
+durations were declared, using clips as short as 15-20 seconds of real
+audio. `identify.py`'s entire escalating-clip-length design (ADR-002 layer
+4) had been sending the clip's own honest (short) duration the whole time -
+exactly the case that reliably fails.
+
+## Decision
+
+When looking up a clip via AcoustID, try the lookup once per each of the
+active album's *known* track durations (already stored in our own `tracks`
+table from Discogs/MusicBrainz), instead of the clip's actual recorded
+length. Concretely:
+
+1. Split fingerprinting from lookup: `fingerprint.compressed_fingerprint()`
+   produces the fingerprint alone; `fingerprint.lookup_with_duration()`
+   takes an explicit duration to declare, independent of the clip's real
+   length.
+2. `identify.identify_current_track()` fingerprints the recorded clip once,
+   then loops over the album's known track durations (deduplicated, plus
+   the clip's own honest duration as a last-resort fallback) calling the
+   lookup with each, checking the album-constrained fuzzy matcher (ADR-002
+   layer 4) against each response.
+3. Clip length escalation (ADR-002's 30s/60s/90s) still exists as an outer
+   loop, but now mostly as a safety net for cases where no stored duration
+   is correct (e.g. a wrong tracklist edition) - not the primary lever.
+   Default clip lengths dropped to 20s/45s/90s, since 15-20s of real audio
+   is enough once the duration guess is right.
+
+## Consequences
+
+- Retracts part of ADR-002's own conclusion: the original "duration is the
+  dominant bottleneck" framing was accidentally half-right for the wrong
+  reason. The early Gorillaz test (2026-07-14) that needed ~120s to match
+  likely worked *because* an uncapped fpcalc call reports the full file's
+  metadata duration, which happened to be close to the true track length -
+  not because 120s of audio content was inherently required. Longer
+  clips were incidentally also sending better duration guesses.
+- Requires no schema changes - the track durations this relies on were
+  already being fetched and stored as part of ADR-002 layer 1. This fix
+  was implementable with data the system already had; it just wasn't using
+  it in the query itself, only for fuzzy-matching titles afterward.
+- Meaningfully more AcoustID calls per identification attempt (one per
+  candidate duration, up to ~12-14 for a typical album) instead of one.
+  Acceptable for personal-use volume; pyacoustid already self-throttles
+  `lookup()` calls.
+- All three previously-failing albums (GNX, Grace, The Low End Theory) now
+  match correctly through the real `identify_current_track()` pipeline
+  using clips as short as 20 seconds, verified against the same digital
+  files that exposed the bug.
+- Still to validate: re-run this against real CD player line-in audio
+  (not just clean digital rips) to confirm the fix holds outside the
+  digital-file test case that found it.

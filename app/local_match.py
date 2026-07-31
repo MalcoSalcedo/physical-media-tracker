@@ -5,7 +5,7 @@ MAX_BIT_ERROR = 2
 
 
 def _popcount(x: int) -> int:
-    return bin(x).count("1")
+    return x.bit_count()
 
 
 def similarity(a: list[int], b: list[int]) -> float:

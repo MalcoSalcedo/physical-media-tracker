@@ -3,9 +3,10 @@
 This document walks through, end to end, how a spinning CD goes from "the
 listener has no idea what's playing" to "the web page shows the correct
 track." It's the *how*; for the *why* behind this specific design (and the
-empirical data that led to it), see
-[`docs/adr/ADR-002`](adr/ADR-002). For a narrative account of building and
-testing it, see [`DEVLOG.md`](DEVLOG.md).
+empirical data that led to it), see [`docs/adr/ADR-002`](adr/ADR-002)
+(album-context-aware identification) and [`docs/adr/ADR-003`](adr/ADR-003)
+(querying AcoustID with the right duration). For a narrative account of
+building and testing it, see [`DEVLOG.md`](DEVLOG.md).
 
 ## The core idea in one paragraph
 
@@ -86,17 +87,19 @@ This is the expensive path, run only when needed:
 
 ```mermaid
 flowchart TD
-    A[For duration in 30s, 60s, 90s] --> B[Record a clip]
+    A[For clip length in 20s, 45s, 90s] --> B[Record a clip]
     B --> C[Compute raw fingerprint]
     C --> D{Matches something in\nthis album's local cache?}
     D -- yes --> E[Return match - no API call made]
-    D -- no --> F[fpcalc + AcoustID lookup]
-    F --> G[Fuzzy-match candidates against\nthe album's known tracklist]
-    G -- match --> H[Cache this track's fingerprint\nfor next time]
-    G -- no match --> I{More durations left?}
-    H --> E
-    I -- yes --> A
-    I -- no --> J[Give up this tick, try again next tick]
+    D -- no --> F[Compute compressed fingerprint]
+    F --> G[For each known track duration\non this album, query AcoustID\ndeclaring that duration]
+    G --> H[Fuzzy-match candidates against\nthe album's known tracklist]
+    H -- match --> I[Cache this track's fingerprint\nfor next time]
+    H -- no match, durations left --> G
+    I --> E
+    H -- no duration matched --> J{More clip lengths left?}
+    J -- yes --> A
+    J -- no --> K[Give up this tick, try again next tick]
 ```
 
 Two matching strategies, tried in this order, at each escalating clip
@@ -113,23 +116,31 @@ length:
    but the raw/uncompressed form doesn't). A hit here costs nothing but
    local computation — no AcoustID call at all.
 2. **Album-constrained fuzzy AcoustID matching** (`app/track_matcher.py`),
-   if nothing was cached. The clip is fingerprinted (compressed form this
-   time) and sent to AcoustID. Critically, the result doesn't need to be a
-   single dominant high-confidence match against the whole AcoustID
-   database — a much lower-confidence result is accepted *if its title
-   fuzzy-matches one of the known tracks on this album*. That's the payoff
-   of Step 1: the candidate set is small and known, so a moderate score
-   is trustworthy in a way it wouldn't be otherwise.
+   if nothing was cached. The clip is fingerprinted once (compressed form),
+   then looked up **once per each of the album's known track durations**
+   (`app/fingerprint.py::lookup_with_duration`) — not the clip's own
+   recorded length. This is the critical, non-obvious part: AcoustID's
+   matching is sensitive to how close the *declared* duration is to the
+   true reference recording's length, almost independent of how much
+   actual audio was fingerprinted. A clip declaring its own honest 20-second
+   length reliably gets rejected; the same clip declaring the track's real
+   ~200-second length matches at high confidence. See
+   [`docs/adr/ADR-003`](adr/ADR-003) for the full investigation. Since we
+   already have every candidate track's duration stored from cataloging
+   (Step 1), we just try each one. On top of that, the result doesn't need
+   to be a single dominant match against the whole AcoustID database — a
+   lower-confidence result is accepted *if its title fuzzy-matches one of
+   the known tracks on this album* (the ADR-002 payoff: a small, known
+   candidate set makes a moderate score trustworthy).
 
 If a match is found, its fingerprint gets cached immediately
 (`catalog.save_track_fingerprint`) — the next time this same disc plays,
-it'll likely resolve from the cache instead, skipping AcoustID (and its
-duration requirements) entirely.
+it'll likely resolve from the cache instead, skipping AcoustID entirely.
 
-If no duration produces a match, `identify_current_track` gives up for
-this tick. That's fine — the next tick tries again, and the gap detector
-means it won't be stuck re-identifying for long once real audio (not a
-gap) resumes.
+If no duration guess produces a match at the current clip length,
+`identify_current_track` records a longer clip and tries again — this is
+now mostly a safety net (e.g., a wrong/incomplete stored tracklist) rather
+than the primary lever it was originally designed to be.
 
 ## Step 4 — Recording what's confirmed
 
@@ -177,19 +188,24 @@ itself, it just displays whatever the listener loop has already decided.
 
 ## What real-world testing found
 
-Verified against a real CD player through a Focusrite line-in (not just
-mic recordings or clean files — see `DEVLOG.md` for the full account):
+Verified against a real CD player through a Focusrite line-in, and later
+against clean digital rips of the tracks that failed (see `DEVLOG.md` for
+the full account):
 
 - The pipeline works end to end against real hardware: a real recording
   of Electric Ladyland's first track matched correctly through the entire
   flow, including the fuzzy matcher and the cache.
-- Not every disc is guaranteed to match. A clean, correct, ear-verified
-  recording of "Come Together" from an Abbey Road CD returned zero
-  AcoustID results across every clip length tested (15–90s) — most likely
-  because that CD's specific mix/mastering isn't what's fingerprinted in
-  AcoustID's database, not because of anything wrong with the pipeline.
-  This is a real, known limitation: some specific discs may just never
-  match via AcoustID, regardless of tuning. The local fingerprint cache
-  exists partly *because* of this — once a track is identified by any
-  means (even eventually a manual override), repeat plays of that same
-  disc stop depending on AcoustID being able to find it again.
+- A round of testing on 2026-07-20/21 found a ~20% hit rate (1 match out of
+  5 albums) via line-in, with every miss looking like a genuine AcoustID
+  coverage gap — clean recordings, human-confirmed correct tracks, zero
+  results at every clip length tried. That conclusion turned out to be
+  wrong: testing clean digital rips of the exact failing tracks proved
+  AcoustID had them well-fingerprinted all along (0.96-0.99 confidence).
+  The real cause was the duration bug described in Step 3 and
+  [`docs/adr/ADR-003`](adr/ADR-003) — every one of those "misses" was our
+  own pipeline declaring the wrong duration to AcoustID, not a database gap.
+  Fixed, and verified against the same three previously-failing tracks
+  through the real pipeline, matching correctly on clips as short as 20
+  seconds.
+- Re-validating the fix against real CD player line-in audio (not just
+  digital files) is the next real test.

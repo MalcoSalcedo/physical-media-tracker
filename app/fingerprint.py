@@ -34,12 +34,9 @@ def _write_wav(samples: np.ndarray, sample_rate: int, path: Path) -> None:
         wf.writeframes(samples.tobytes())
 
 
-def identify_clip(samples: np.ndarray, sample_rate: int, api_key: str) -> list[tuple]:
-    """Fingerprint a recorded clip and look it up via AcoustID.
-
-    Returns (score, recording_id, title, artist) tuples, same shape as
-    `acoustid.match()`. Writes the clip to a temporary WAV file since
-    fpcalc operates on files, not in-memory PCM.
+def compressed_fingerprint(samples: np.ndarray, sample_rate: int) -> str:
+    """Fingerprint a clip in AcoustID's compressed form, for use with
+    `lookup_with_duration`.
 
     Requires `fpcalc` on PATH (on the Pi: `apt install chromaprint`). On
     Windows, if it's not resolving, set FPCALC=<path to fpcalc.exe> in
@@ -48,7 +45,26 @@ def identify_clip(samples: np.ndarray, sample_rate: int, api_key: str) -> list[t
     with tempfile.TemporaryDirectory() as tmpdir:
         wav_path = Path(tmpdir) / "clip.wav"
         _write_wav(samples, sample_rate, wav_path)
-        return list(acoustid.match(api_key, str(wav_path), force_fpcalc=True))
+        _, fp = acoustid.fingerprint_file(str(wav_path), force_fpcalc=True)
+        return fp
+
+
+def lookup_with_duration(compressed_fp: str, duration: int, api_key: str) -> list[tuple]:
+    """Look up a compressed fingerprint via AcoustID, declaring a specific duration.
+
+    Returns (score, recording_id, title, artist) tuples.
+
+    Critically, `duration` should be a *candidate reference recording's*
+    known runtime (e.g. a track's stored duration from our own tracklist)
+    - not the length of the clip we actually recorded. AcoustID's matching
+    is sensitive to how close the declared duration is to the true length
+    of the recording it's being compared against; a short, honestly-
+    declared clip duration gets rejected even when the fingerprint content
+    itself would otherwise match cleanly. See ADR-003 for the full
+    investigation and evidence.
+    """
+    response = acoustid.lookup(api_key, compressed_fp, duration)
+    return list(acoustid.parse_lookup_result(response))
 
 
 def raw_fingerprint(samples: np.ndarray, sample_rate: int) -> list[int]:

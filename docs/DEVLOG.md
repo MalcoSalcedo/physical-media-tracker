@@ -275,3 +275,61 @@ what's playing" unconditionally, but as "attempts to identify, with real
 limits tied to AcoustID's actual coverage." The local fingerprint cache
 still matters for the discs that do get identified at least once, but it
 doesn't help the discs that never get a first hit at all.
+
+## 2026-07-31 — The "coverage gap" conclusion was wrong. Found the real bug.
+
+The three albums that failed during physical testing (GNX, Grace, The Low
+End Theory) got ripped to digital files, which made possible the one test
+that should have happened before concluding anything about AcoustID's
+coverage: fingerprint the *exact same tracks*, clean, no analog signal path
+at all, and see what happens.
+
+They all matched immediately, at 0.96-0.99 confidence. AcoustID has these
+recordings well-fingerprinted. The 2026-07-20/21 conclusion - that this was
+a real, uneven coverage gap in AcoustID's database - was flatly wrong.
+
+Tracked down the actual cause instead of accepting the first plausible
+theory a second time. `app/identify.py`'s pipeline was still failing on
+these exact files even though the raw digital-file lookups worked, which
+ruled out a decode-path issue and pointed at something in how the pipeline
+itself constructs the AcoustID query. Isolated it with one fixed
+fingerprint (same bytes, a genuinely 60-second real clip of "Luther") and
+varying only the declared `duration` parameter sent to AcoustID:
+
+- Honest duration (60s, matching the actual clip) → 0 results
+- Other guesses (90, 120, 240, 300s) → 0 results
+- The track's *true* length (178s - which was already sitting in our own
+  `tracks` table from the original Discogs lookup) → **0.99 confidence**
+
+Not "any large duration works" - specifically, the declared duration has to
+be close to the true reference recording's length. Confirmed the same
+pattern on Mojo Pin and Rap Promoter using their own stored durations, and
+confirmed clips as short as 15-20 seconds work fine once the duration guess
+is right (10s still fails). The entire "duration is the bottleneck" framing
+from 2026-07-14 had been *accidentally correct for the wrong reason* the
+whole time: an uncapped fpcalc call reports a file's full metadata
+duration, not the analyzed window, so a long test clip was incidentally
+also sending a better duration guess. Nobody had isolated declared-duration
+as its own variable until now.
+
+The fix (full reasoning in `docs/adr/ADR-003`): `identify_current_track`
+now fingerprints a clip once, then queries AcoustID **once per each of the
+album's known track durations** - data that was already being fetched and
+stored back in Phase 2's first PR, just never used in the query itself,
+only for fuzzy-matching titles afterward. Verified against the real
+pipeline: all three previously-failing tracks now identify correctly using
+20-second clips.
+
+Worth being honest about the process here, not just the result: the
+2026-07-20/21 devlog entry stated a wrong conclusion with real confidence,
+because "ruled out everything else, therefore it must be X" is a weaker
+argument than it feels like in the moment - it stops looking the instant a
+remaining plausible explanation is found, not when the explanation is
+actually confirmed. The thing that actually resolved it was a new kind of
+evidence (a clean-signal control test on the literal failing tracks), not
+more reasoning about the evidence already in hand.
+
+Still open: this fix is verified against digital files, not yet against
+real CD player line-in audio again. That's the next real test - expecting
+it to now work, but "expecting" isn't "verified," and that distinction is
+exactly what this entry is about.
