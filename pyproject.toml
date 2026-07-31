@@ -24,6 +24,19 @@ dev = [
 [tool.ruff]
 line-length = 100
 
+[tool.ruff.lint]
+ignore = [
+    # DTZ: this project deliberately uses naive-but-UTC datetimes throughout
+    # (to match SQLite's datetime('now'), which has no timezone info at all -
+    # see listener.py), not timezone-aware ones. See ADR/DEVLOG history for
+    # the timezone bug this consistency was specifically added to prevent.
+    "DTZ",
+    # BLE001: listener.py's main loop intentionally catches a bare Exception
+    # so a single transient failure (network, mic, etc.) doesn't kill the
+    # daemon - see the comment at that call site.
+    "BLE001",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
