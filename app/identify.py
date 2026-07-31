@@ -2,7 +2,7 @@ import sqlite3
 
 from app import catalog, fingerprint, track_matcher
 
-DEFAULT_DURATIONS = (30, 60, 90)
+DEFAULT_DURATIONS = (20, 45, 90)
 SAMPLE_RATE = 44100
 
 
@@ -17,29 +17,40 @@ def identify_current_track(
     """Identify the currently playing track on the given album.
 
     Tries the local fingerprint cache first (fast, no network) at each
-    escalating clip length, falling back to an album-constrained fuzzy
-    AcoustID match if nothing is cached yet for that clip (see ADR-002).
-    A longer clip is only recorded if the previous, shorter one came back
-    with no usable candidate - most plays should resolve at the shortest
-    length once a few tracks have been cached locally.
+    escalating clip length. If nothing is cached yet, falls back to an
+    album-constrained fuzzy AcoustID match - but critically, the lookup is
+    tried once per each of the album's *known* track durations (from our
+    own tracklist), not the clip's own recorded length. AcoustID's matching
+    turns out to be sensitive to how close the declared duration is to the
+    true reference recording's length; a short, honestly-declared clip
+    duration gets rejected even when the fingerprint content itself would
+    otherwise match cleanly. See ADR-003 for the investigation and
+    evidence. This is also why clips can now be much shorter than
+    originally planned - a 15-20s clip matches fine once the duration
+    guess is right, so a longer clip is only recorded if every duration
+    guess fails at the current length.
     """
     if record_fn is None:
         record_fn = fingerprint.record_clip
 
-    known_titles = [t["title"] for t in catalog.get_tracks(conn, collection_id)]
+    tracks = catalog.get_tracks(conn, collection_id)
+    known_titles = [t["title"] for t in tracks]
+    known_durations = sorted({t["duration_seconds"] for t in tracks if t["duration_seconds"]})
 
-    for duration in durations:
-        samples = record_fn(duration)
+    for clip_duration in durations:
+        samples = record_fn(clip_duration)
         raw_fp = fingerprint.raw_fingerprint(samples, sample_rate)
 
         cached_match = catalog.find_cached_match(conn, collection_id, raw_fp)
         if cached_match:
             return cached_match
 
-        results = fingerprint.identify_clip(samples, sample_rate, api_key)
-        fuzzy_match = track_matcher.match_against_album(results, known_titles)
-        if fuzzy_match:
-            catalog.save_track_fingerprint(conn, collection_id, fuzzy_match, raw_fp)
-            return fuzzy_match
+        compressed_fp = fingerprint.compressed_fingerprint(samples, sample_rate)
+        for duration_guess in (*known_durations, clip_duration):
+            results = fingerprint.lookup_with_duration(compressed_fp, duration_guess, api_key)
+            fuzzy_match = track_matcher.match_against_album(results, known_titles)
+            if fuzzy_match:
+                catalog.save_track_fingerprint(conn, collection_id, fuzzy_match, raw_fp)
+                return fuzzy_match
 
     return None
