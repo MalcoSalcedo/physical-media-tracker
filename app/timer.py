@@ -22,20 +22,26 @@ def decide_next_action(
     started_at: datetime | None,
     tracks: list[dict],
     gap_detected: bool,
+    has_signal: bool,
     now: datetime,
 ) -> str:
     """Decide what the listener should do on this tick.
 
-    IDENTIFY: no track is known yet, or a gap fired earlier than the
-    current track's known runtime would predict - that means a skip, so
-    trust neither the timer nor track order and re-identify from scratch.
+    IDENTIFY: no track is known yet *and* audio is actually playing, or a
+    gap fired earlier than the current track's known runtime would predict
+    - that means a skip, so trust neither the timer nor track order and
+    re-identify from scratch.
     ADVANCE: the current track's known duration has elapsed with no early
     gap - safe to just move to the next track in album order, no
     recording/API call needed.
-    WAIT: nothing to do yet.
+    WAIT: nothing to do yet. Also covers the gap between selecting an
+    album and actually pressing play - there's no signal linking the CD
+    player to this software, so `has_signal` (a cheap energy check) is
+    what keeps the listener from burning a full identify attempt on
+    silence before playback has even started.
     """
     if current_track_title is None:
-        return IDENTIFY
+        return IDENTIFY if has_signal else WAIT
 
     track = next((t for t in tracks if t["title"] == current_track_title), None)
     duration = track["duration_seconds"] if track else None

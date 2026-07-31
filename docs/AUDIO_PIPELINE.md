@@ -51,7 +51,7 @@ flowchart TD
     A[tick] --> B{Album selected?}
     B -- no --> Z[sleep, try again]
     B -- yes --> C[Record short gap-check clip]
-    C --> D[Feed into GapDetector]
+    C --> D[Feed into GapDetector +\ncheck raw signal energy]
     D --> E["decide_next_action()"]
     E -- IDENTIFY --> F[identify_current_track]
     E -- ADVANCE --> G[Move to next track in album order]
@@ -67,13 +67,21 @@ clip, no fingerprinting or network calls) and it's what makes skip
 detection *fast*. It tells the listener the instant a track boundary
 happens, instead of waiting on a fixed polling interval to notice.
 
+That same cheap energy check also solves a different problem: there's no
+signal connecting the physical CD player to this software at all, so the
+listener starts polling the instant an album is selected — which could be
+well before you've actually pressed play. Rather than burn a full 20-90s
+identify attempt recording silence, `tick()` checks whether the gap-check
+clip has any real signal in it first (`has_signal` in
+`decide_next_action`), and just waits if it doesn't.
+
 **The three possible actions** (`app/timer.py::decide_next_action`):
 
 | Action | When | What happens |
 |---|---|---|
-| `IDENTIFY` | No track is known yet, or a gap fired *before* the current track's known duration would predict — i.e., a skip | Run the full identification flow (Step 3) |
+| `IDENTIFY` | No track is known yet *and* the input actually has signal, or a gap fired *before* the current track's known duration would predict — i.e., a skip | Run the full identification flow (Step 3) |
 | `ADVANCE` | The current track's known duration has elapsed with no early gap | Move to the next track in the stored album order — no recording, no API call |
-| `WAIT` | Nothing has happened yet | Do nothing this tick |
+| `WAIT` | Nothing has happened yet, or no track is known and the input is silent (playback probably hasn't started) | Do nothing this tick |
 
 `ADVANCE` is the cheap path: once a track is confirmed, the system trusts
 the album's own track order and durations (from the `tracks` table) rather

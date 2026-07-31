@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 
 from app import catalog, fingerprint, identify, timer
 from app.db import get_connection
-from app.gap_detector import GapDetector
+from app.gap_detector import GapDetector, rms
 
 GAP_CHECK_CLIP_SECONDS = 2
 POLL_INTERVAL_SECONDS = 5
@@ -50,12 +50,14 @@ def tick(
 
     gap_clip = gap_check_fn() if gap_check_fn else fingerprint.record_clip(GAP_CHECK_CLIP_SECONDS)
     gap_detected = detector.process_chunk(gap_clip)
+    has_signal = rms(gap_clip) >= detector.silence_threshold
 
     action = timer.decide_next_action(
         current_track_title=current["track_title"],
         started_at=started_at,
         tracks=tracks,
         gap_detected=gap_detected,
+        has_signal=has_signal,
         # SQLite's datetime('now') (used for started_at) is UTC, not local time.
         now=now or datetime.utcnow(),
     )
