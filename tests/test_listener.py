@@ -27,10 +27,20 @@ def detector():
 
 
 def _quiet_gap_check():
-    """A gap_check_fn that never reports a gap (below GapDetector's min duration)."""
+    """A gap_check_fn with real signal that never reports a gap (below
+    GapDetector's min duration) - "quiet" from the gap detector's
+    perspective (no transitions), not literally silent."""
     import numpy as np
 
     return np.full(100, 1000, dtype="int16")
+
+
+def _silent_gap_check():
+    """A gap_check_fn simulating actual silence - e.g. the CD player hasn't
+    started playing yet."""
+    import numpy as np
+
+    return np.zeros(100, dtype="int16")
 
 
 def test_tick_does_nothing_when_no_album_selected(conn, detector):
@@ -49,6 +59,21 @@ def test_tick_identifies_when_no_track_known_yet(conn, detector):
     assert action == listener.timer.IDENTIFY
     identify_mock.assert_called_once()
     assert catalog.get_now_playing(conn)["track_title"] == "15 Step"
+
+
+def test_tick_waits_instead_of_identifying_when_no_track_known_and_silent(conn, detector):
+    # This is the "selected the album but haven't pressed play yet" case -
+    # don't burn a full identify attempt recording silence.
+    item_id = catalog.save_item(conn, artist="Radiohead", album="In Rainbows", format="Vinyl")
+    catalog.save_tracks(conn, item_id, [{"title": "15 Step", "duration_seconds": 237}])
+    catalog.set_active_album(conn, item_id)
+
+    with patch("listener.identify.identify_current_track") as identify_mock:
+        action = listener.tick(conn, "fake-key", detector, gap_check_fn=_silent_gap_check)
+
+    assert action == listener.timer.WAIT
+    identify_mock.assert_not_called()
+    assert catalog.get_now_playing(conn)["track_title"] is None
 
 
 def test_tick_does_not_update_now_playing_when_identify_finds_nothing(conn, detector):
