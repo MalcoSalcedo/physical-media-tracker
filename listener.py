@@ -21,7 +21,14 @@ from app.db import get_connection
 from app.gap_detector import GapDetector, rms
 
 GAP_CHECK_CLIP_SECONDS = 2
-POLL_INTERVAL_SECONDS = 5
+# Deliberately short: gap-check recording (~2s) plus this sleep is the
+# listener's *entire* window of awareness between samples. A 5s gap here
+# meant real inter-track silence (often only 1-3s long) had a good chance
+# of falling entirely in the dead zone and never being seen at all -
+# confirmed happening in real testing (see DEVLOG, 2026-08-01). Keeping
+# this near-zero instead of adding a background thread trades a bit of
+# CPU/device churn for closing that blind spot with a one-line change.
+POLL_INTERVAL_SECONDS = 0.5
 SAMPLE_RATE = 44100
 
 
@@ -76,7 +83,7 @@ def tick(
     return action
 
 
-def run(api_key: str, device: int | None = None, poll_interval: int = POLL_INTERVAL_SECONDS) -> None:
+def run(api_key: str, device: int | None = None, poll_interval: float = POLL_INTERVAL_SECONDS) -> None:
     conn = get_connection()
     detector = GapDetector(SAMPLE_RATE)
 
@@ -103,7 +110,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--device", type=int, default=None, help="Input device index (see sounddevice.query_devices())"
     )
-    parser.add_argument("--poll-interval", type=int, default=POLL_INTERVAL_SECONDS)
+    parser.add_argument("--poll-interval", type=float, default=POLL_INTERVAL_SECONDS)
     args = parser.parse_args()
 
     run(os.environ["ACOUSTID_API_KEY"], device=args.device, poll_interval=args.poll_interval)

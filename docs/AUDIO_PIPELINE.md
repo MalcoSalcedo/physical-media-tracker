@@ -44,7 +44,8 @@ The user picks an album via `GET /listen`, which posts to `POST /listen`
 ## Step 2 — The listener loop
 
 [`listener.py`](../listener.py) runs continuously (as `listener.service` on
-the Pi). Every few seconds it calls `tick()`, which does one iteration of:
+the Pi). It calls `tick()` in a tight loop (~2.5s per iteration: a 2s
+gap-check recording plus a short sleep), which does one iteration of:
 
 ```mermaid
 flowchart TD
@@ -67,6 +68,17 @@ clip, no fingerprinting or network calls) and it's what makes skip
 detection *fast*. It tells the listener the instant a track boundary
 happens, instead of waiting on a fixed polling interval to notice.
 
+**The polling interval matters more than it looks like it should.** Each
+tick only samples a short clip, not a continuous stream - between samples
+there's a real dead zone where nothing is being recorded at all. A CD's
+inter-track silence is often only 1-3 seconds long, and with the original
+5-second sleep between ticks, that brief gap had a real chance of landing
+entirely in the dead zone and never being observed - confirmed happening
+during real testing (a manual skip went undetected for several minutes;
+see `DEVLOG.md`, 2026-08-01). `POLL_INTERVAL_SECONDS` is deliberately kept
+near-zero now specifically to minimize that blind spot without the added
+complexity of a background monitoring thread.
+
 That same cheap energy check also solves a different problem: there's no
 signal connecting the physical CD player to this software at all, so the
 listener starts polling the instant an album is selected — which could be
@@ -79,15 +91,25 @@ clip has any real signal in it first (`has_signal` in
 
 | Action | When | What happens |
 |---|---|---|
-| `IDENTIFY` | No track is known yet *and* the input actually has signal, or a gap fired *before* the current track's known duration would predict — i.e., a skip | Run the full identification flow (Step 3) |
-| `ADVANCE` | The current track's known duration has elapsed with no early gap | Move to the next track in the stored album order — no recording, no API call |
+| `IDENTIFY` | No track is known yet *and* the input actually has signal, or a gap fired at all | Run the full identification flow (Step 3) |
+| `ADVANCE` | The current track's known duration has elapsed with no gap at all | Move to the next track in the stored album order — no recording, no API call |
 | `WAIT` | Nothing has happened yet, or no track is known and the input is silent (playback probably hasn't started) | Do nothing this tick |
 
-`ADVANCE` is the cheap path: once a track is confirmed, the system trusts
-the album's own track order and durations (from the `tracks` table) rather
-than re-identifying every single track. It only falls back to `IDENTIFY`
-when the gap detector notices something that doesn't match that
-expectation (a skip).
+`ADVANCE` is the cheap path — used when a track's duration elapses with no
+gap ever detected at all (e.g. a seamless mix with no silence between
+tracks). Any actual detected gap always triggers a full `IDENTIFY`
+instead, regardless of its timing. This used to try to distinguish an
+"early" gap (a skip) from an "on-time" one (assumed to be a normal
+transition, safe to just advance without a fresh AcoustID call) — but
+that created a real gap in coverage: a skip whose gap happened to land
+right around when the current track was also about to naturally end got
+misclassified as a normal transition, showing the wrong track. Since
+re-identification is position-independent (it searches the whole album,
+not "the next track"), it handles forward skips, backward skips, and
+random back-and-forth sequences identically — it doesn't matter *why* a
+gap fired, only that one did. Confirmed necessary from real testing (see
+`DEVLOG.md`, 2026-08-01), and affordable now that identification is fast
+(usually resolves on the first ~20s clip — see ADR-003).
 
 ## Step 3 — Identifying a track (`app/identify.py::identify_current_track`)
 
