@@ -387,3 +387,20 @@ hardware, not just files. Gap detection is meaningfully more reliable than
 before but not yet bulletproof against rapid successive skips - worth
 another real test now that both fixes are in, but not yet re-verified as
 of this entry.
+
+**Update, same session:** re-tested live with the "always re-identify on
+gap" fix deployed. The listener caught up entirely on its own from where
+it had lagged - no manual intervention - eventually landing correctly on
+"Skypager" (track 12) as the album played out to its end. Good sign the
+combination of both fixes (tighter polling + no more gap-timing
+misclassification) is meaningfully more self-correcting than either fix
+alone, even if it doesn't catch literally every individual skip in a rapid
+sequence.
+
+One gap noticed at the very end of the session, not yet fixed: once the
+CD physically stops, the system has no concept of "the album ended." It'll
+just keep trying to re-identify against silence indefinitely (wasted
+AcoustID calls) rather than recognizing "nothing is playing" as its own
+state. Worth addressing whenever now-playing work picks back up, but not
+urgent - low real cost (a background loop making occasional fruitless API
+calls), just an honest known gap in the current design.
