@@ -333,3 +333,57 @@ Still open: this fix is verified against digital files, not yet against
 real CD player line-in audio again. That's the next real test - expecting
 it to now work, but "expecting" isn't "verified," and that distinction is
 exactly what this entry is about.
+
+## 2026-08-01 — Real line-in re-test: the duration fix works, skip tracking didn't
+
+Re-hooked up the CD player and re-ran the exact setup that failed on
+2026-07-20/21 (The Low End Theory, via the Focusrite line-in). The
+duration fix held up on real hardware, not just digital files: "Excursions"
+identified almost immediately, and sequential timer-based advancement to
+"Buggin' Out" landed within seconds of the predicted track boundary. Good
+confirmation that ADR-003 wasn't a digital-file-only fix.
+
+Skip detection was a different story. Manually skipped the CD forward
+mid-track (twice, in fairly quick succession) to test whether the gap
+detector would catch it and trigger a re-identify. It didn't - `now_playing`
+sat on the stale track for several minutes across both skips, while the
+album kept playing for real. Root cause: `tick()`'s gap-check only records
+a ~2 second clip once every ~5-7 second cycle (the old `POLL_INTERVAL_SECONDS
+= 5`), so there's a real dead zone between samples where nothing is being
+monitored at all. A CD's inter-track silence is often only 1-3 seconds -
+short enough that it had a real chance of falling entirely inside that gap
+and never being observed. Confirmed by manually forcing a fresh
+identification, which correctly caught up once run directly.
+
+Fixed by dropping `POLL_INTERVAL_SECONDS` to near-zero instead of adding a
+background monitoring thread - simpler, and closes most of the blind spot
+with a one-line change (full reasoning in the comment at that constant).
+Re-tested live: the tightened loop caught a real skip cleanly this time
+(track 6 to 7, landing correctly on "Vibes And Stuff"). But a second round
+of rapid back-to-back skips (through tracks 8 and 9) still got missed
+before the system caught up on its own a few tracks later - real
+improvement (one skip caught this time, versus zero all of last session),
+not a complete fix. Documenting that honestly rather than overclaiming.
+
+That led to a good question: what about skipping backward, or a random
+back-and-forth sequence, not just forward skips? Walked through the logic
+and found re-identification is already position-independent (it searches
+the whole album, not "the next track"), so direction was never the issue.
+But there was a real, separate bug in `decide_next_action`: it only
+treated a detected gap as "definitely a skip, re-identify" if the gap
+fired *before* the current track's stored duration would have naturally
+elapsed; a gap landing at or after that point was treated as a normal
+transition and just advanced to the next track in sequence without
+re-checking. A skip whose timing happened to coincide with that boundary
+would've been silently misclassified. Simplified `decide_next_action` so
+any detected gap always triggers a full re-identify, full reasoning in
+`app/timer.py` - the original "save an AcoustID call when it's probably
+just a normal transition" logic mattered a lot more before the duration
+fix made identification fast; now it's a small, worthwhile trade for
+correctness.
+
+Net for today: the duration-hinting fix (ADR-003) is now confirmed on real
+hardware, not just files. Gap detection is meaningfully more reliable than
+before but not yet bulletproof against rapid successive skips - worth
+another real test now that both fixes are in, but not yet re-verified as
+of this entry.

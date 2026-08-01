@@ -74,7 +74,11 @@ def test_decide_next_action_advances_once_track_duration_elapses_with_no_gap():
     assert action == ADVANCE
 
 
-def test_decide_next_action_advances_on_gap_at_expected_track_boundary():
+def test_decide_next_action_identifies_on_gap_at_expected_track_boundary():
+    # Even a gap that lands right at the expected boundary always
+    # re-identifies now, rather than assuming "on time" means "not a
+    # skip" - a skip that happens to land near the natural boundary
+    # would otherwise be misclassified as a normal transition.
     started_at = datetime(2026, 1, 1, 12, 0, 0)
     action = decide_next_action(
         current_track_title="15 Step",
@@ -84,7 +88,7 @@ def test_decide_next_action_advances_on_gap_at_expected_track_boundary():
         has_signal=False,
         now=started_at + timedelta(seconds=237),
     )
-    assert action == ADVANCE
+    assert action == IDENTIFY
 
 
 def test_decide_next_action_identifies_on_gap_before_expected_boundary():
@@ -98,6 +102,21 @@ def test_decide_next_action_identifies_on_gap_before_expected_boundary():
         gap_detected=True,
         has_signal=False,
         now=started_at + timedelta(seconds=30),
+    )
+    assert action == IDENTIFY
+
+
+def test_decide_next_action_identifies_on_gap_long_after_expected_boundary():
+    # E.g. a backward skip well past when the current track "should" have
+    # already ended - still just re-identifies, not a special case.
+    started_at = datetime(2026, 1, 1, 12, 0, 0)
+    action = decide_next_action(
+        current_track_title="15 Step",
+        started_at=started_at,
+        tracks=TRACKS,
+        gap_detected=True,
+        has_signal=False,
+        now=started_at + timedelta(seconds=600),
     )
     assert action == IDENTIFY
 
