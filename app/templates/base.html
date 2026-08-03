@@ -121,21 +121,81 @@
         <a href="/now-playing">Now playing</a>
     </nav>
 
-    {% if global_now_playing %}
     <div class="banner">
-        {% if global_now_playing.cover_art_url %}
+        {% if global_now_playing and global_now_playing.cover_art_url %}
         <img src="{{ global_now_playing.cover_art_url }}" alt="cover">
         {% else %}
         <div class="cover-placeholder"></div>
         {% endif %}
         <div>
+            {% if not global_now_playing %}
+            <div class="banner-title">Nothing selected</div>
+            <div class="banner-sub">Pick an album on the Listen page</div>
+            {% elif global_now_playing.status == "stopped" %}
+            <div class="banner-title">Stopped</div>
+            <div class="banner-sub">Last playing: {{ global_now_playing.track_title }} — {{ global_now_playing.artist }} — {{ global_now_playing.album }}</div>
+            {% else %}
             <div class="banner-title">{{ global_now_playing.track_title or "Nothing identified yet" }}</div>
             <div class="banner-sub">{{ global_now_playing.artist }} — {{ global_now_playing.album }}</div>
+            {% endif %}
         </div>
-        <div class="banner-time">{{ global_now_playing.started_at | timeago }}</div>
+        <div class="banner-time">{% if global_now_playing %}{{ global_now_playing.started_at | timeago }}{% endif %}</div>
     </div>
-    {% endif %}
 
     {% block content %}{% endblock %}
+
+    <script>
+    (function () {
+        // Polls the JSON endpoint so the banner (and, on the now-playing page,
+        // the tracklist highlight/history) stay current without a manual
+        // reload. Kept deliberately simple - no framework, matches the rest
+        // of the project's server-rendered approach. A full page reload is
+        // only triggered on /now-playing itself, and only when what's playing
+        // actually changed, so the tracklist highlighting and recently-played
+        // table (which the banner alone can't update) stay in sync too.
+        var lastTrack = {{ (global_now_playing.track_title if global_now_playing else none) | tojson }};
+        var lastStatus = {{ (global_now_playing.status if global_now_playing else none) | tojson }};
+
+        function updateBanner(data) {
+            var titleEl = document.querySelector('.banner-title');
+            var subEl = document.querySelector('.banner-sub');
+            var timeEl = document.querySelector('.banner-time');
+            if (!titleEl || !subEl || !timeEl) return;
+
+            if (!data.status) {
+                titleEl.textContent = 'Nothing selected';
+                subEl.textContent = 'Pick an album on the Listen page';
+                timeEl.textContent = '';
+            } else if (data.status === 'stopped') {
+                titleEl.textContent = 'Stopped';
+                subEl.textContent = 'Last playing: ' + (data.track_title || '') + ' — ' +
+                    (data.artist || '') + ' — ' + (data.album || '');
+                timeEl.textContent = data.last_updated || '';
+            } else {
+                titleEl.textContent = data.track_title || 'Nothing identified yet';
+                subEl.textContent = (data.artist || '') + ' — ' + (data.album || '');
+                timeEl.textContent = data.last_updated || '';
+            }
+        }
+
+        function poll() {
+            fetch('/api/now-playing')
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    updateBanner(data);
+                    if (data.track_title !== lastTrack || data.status !== lastStatus) {
+                        lastTrack = data.track_title;
+                        lastStatus = data.status;
+                        if (window.location.pathname === '/now-playing') {
+                            window.location.reload();
+                        }
+                    }
+                })
+                .catch(function () { /* transient network hiccup - just try again next tick */ });
+        }
+
+        setInterval(poll, 5000);
+    })();
+    </script>
 </body>
 </html>

@@ -26,12 +26,16 @@ CREATE TABLE IF NOT EXISTS tracks (
 );
 
 -- Single-row table: id is always 1, holds whatever is currently playing.
+-- status: 'waiting' (album selected, nothing identified yet), 'playing'
+-- (a track is confirmed), 'stopped' (was playing, but sustained silence
+-- suggests playback has actually stopped - see ADR-002/listener.py).
 CREATE TABLE IF NOT EXISTS now_playing (
     id            INTEGER PRIMARY KEY CHECK (id = 1),
     collection_id INTEGER REFERENCES collection(id) ON DELETE SET NULL,
     track_title   TEXT,
     started_at    TEXT NOT NULL DEFAULT (datetime('now')),
-    source        TEXT NOT NULL CHECK (source IN ('fingerprint', 'manual'))
+    source        TEXT NOT NULL CHECK (source IN ('fingerprint', 'manual')),
+    status        TEXT NOT NULL DEFAULT 'waiting' CHECK (status IN ('waiting', 'playing', 'stopped'))
 );
 
 CREATE TABLE IF NOT EXISTS history (

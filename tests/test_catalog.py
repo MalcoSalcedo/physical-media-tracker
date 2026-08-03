@@ -149,6 +149,7 @@ def test_set_active_album_and_get_now_playing(conn):
     assert current["album"] == "In Rainbows"
     assert current["track_title"] is None
     assert current["source"] == "manual"
+    assert current["status"] == "waiting"
 
 
 def test_set_active_album_overwrites_previous_selection(conn):
@@ -210,8 +211,33 @@ def test_update_current_track_sets_now_playing_and_appends_history(conn):
 
     assert current["track_title"] == "15 Step"
     assert current["source"] == "fingerprint"
+    assert current["status"] == "playing"
     assert len(history) == 1
     assert history[0]["track_title"] == "15 Step"
+
+
+def test_mark_stopped_sets_status_but_keeps_last_known_track(conn):
+    item_id = catalog.save_item(conn, artist="Radiohead", album="In Rainbows", format="Vinyl")
+    catalog.set_active_album(conn, item_id)
+    catalog.update_current_track(conn, item_id, "15 Step", "fingerprint")
+
+    catalog.mark_stopped(conn, item_id)
+    current = catalog.get_now_playing(conn)
+
+    assert current["status"] == "stopped"
+    assert current["track_title"] == "15 Step"
+
+
+def test_mark_stopped_is_scoped_to_the_given_collection(conn):
+    first_id = catalog.save_item(conn, artist="Artist A", album="Album A", format="CD")
+    second_id = catalog.save_item(conn, artist="Artist B", album="Album B", format="CD")
+    catalog.set_active_album(conn, first_id)
+    catalog.update_current_track(conn, first_id, "Track 1", "fingerprint")
+
+    catalog.mark_stopped(conn, second_id)  # not the active album
+    current = catalog.get_now_playing(conn)
+
+    assert current["status"] == "playing"
 
 
 def test_update_current_track_appends_separate_history_row_per_track(conn):

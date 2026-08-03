@@ -404,3 +404,49 @@ AcoustID calls) rather than recognizing "nothing is playing" as its own
 state. Worth addressing whenever now-playing work picks back up, but not
 urgent - low real cost (a background loop making occasional fruitless API
 calls), just an honest known gap in the current design.
+
+## 2026-08-03 — A "stopped" state, and a live-refreshing page
+
+Closed the gap noted at the end of the last session and made the web page
+actually feel real-time rather than requiring a manual reload.
+
+**"Stopped" state:** `now_playing` gained a `status` column
+(`waiting` / `playing` / `stopped`) alongside the existing `track_title`.
+`listener.py` now runs a second `GapDetector` instance alongside the
+existing gap detector - same gap-check clips, no extra recording - but
+with a much longer threshold (30s) tuned to catch "the CD actually
+stopped" rather than a normal 1-3s inter-track gap. When it fires while a
+track is playing, `catalog.mark_stopped()` flips the status but
+deliberately *keeps* the last-known `track_title` around, so the UI can
+show "Stopped - last playing: X" instead of just going blank.
+
+Wiring this in surfaced a real latent bug in `decide_next_action` while
+reasoning through the has_signal/status interaction: a track that stopped
+playing mid-track (not at a clean boundary) would eventually have its
+stored duration "expire" and get silently, wrongly ADVANCEd to whatever's
+next in album order, even though nothing was actually playing. Fixed by
+gating ADVANCE on `has_signal` - the same cheap RMS check already used
+elsewhere - so a genuinely silent input just waits instead of guessing.
+
+**Live refresh:** added a small `GET /api/now-playing` JSON endpoint and a
+plain `<script>` block in `base.html` that polls it every 5 seconds and
+updates the banner's title/subtitle/time-ago text in place - no framework,
+matching the rest of the project's server-rendered, no-build-step
+approach. On `/now-playing` specifically, a change in track or status also
+triggers a full page reload, so the tracklist highlight and recently-played
+table (which the banner alone can't update) stay in sync too.
+
+Verified locally against the running dev server (not yet against live CD
+player audio) by directly flipping `now_playing.status` in the DB and
+confirming both the JSON endpoint and the rendered `/now-playing` /
+banner correctly show the stopped state, then flipping it back. Added
+test coverage for all of the above: `decide_next_action`'s new `status`
+parameter and the has_signal-gated ADVANCE fix, `listener.tick()`'s
+wiring of the new stopped detector (fires while playing → marks stopped;
+signal resumes while stopped → re-identifies), and `catalog.mark_stopped`.
+82 tests passing.
+
+Next real test: confirm the stopped detector's 30-second threshold is
+sane against an actual CD player (does the player itself go silent for
+that long between tracks or at end-of-disc in a way that could false-
+trigger it?) - not yet checked against real hardware, only reasoned about.

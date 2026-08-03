@@ -30,6 +30,11 @@ GAP_CHECK_CLIP_SECONDS = 2
 # CPU/device churn for closing that blind spot with a one-line change.
 POLL_INTERVAL_SECONDS = 0.5
 SAMPLE_RATE = 44100
+# How long the input has to be continuously silent before we consider
+# playback actually stopped (vs. just a normal 1-3s inter-track gap).
+# Reuses GapDetector with a much longer threshold, fed the same gap-check
+# clips - no separate recording needed.
+STOPPED_SILENCE_SECONDS = 30
 
 
 def _parse_started_at(value: str) -> datetime:
@@ -41,6 +46,7 @@ def tick(
     api_key: str,
     detector: GapDetector,
     *,
+    stopped_detector: GapDetector | None = None,
     gap_check_fn=None,
     record_fn=None,
     sample_rate: int = SAMPLE_RATE,
@@ -54,13 +60,21 @@ def tick(
     collection_id = current["collection_id"]
     tracks = [dict(t) for t in catalog.get_tracks(conn, collection_id)]
     started_at = _parse_started_at(current["started_at"]) if current["track_title"] else None
+    status = current["status"]
 
     gap_clip = gap_check_fn() if gap_check_fn else fingerprint.record_clip(GAP_CHECK_CLIP_SECONDS)
     gap_detected = detector.process_chunk(gap_clip)
     has_signal = rms(gap_clip) >= detector.silence_threshold
 
+    if stopped_detector is not None:
+        stopped_fired = stopped_detector.process_chunk(gap_clip)
+        if stopped_fired and status == "playing":
+            catalog.mark_stopped(conn, collection_id)
+            status = "stopped"
+
     action = timer.decide_next_action(
         current_track_title=current["track_title"],
+        status=status,
         started_at=started_at,
         tracks=tracks,
         gap_detected=gap_detected,
@@ -86,6 +100,7 @@ def tick(
 def run(api_key: str, device: int | None = None, poll_interval: float = POLL_INTERVAL_SECONDS) -> None:
     conn = get_connection()
     detector = GapDetector(SAMPLE_RATE)
+    stopped_detector = GapDetector(SAMPLE_RATE, min_gap_seconds=STOPPED_SILENCE_SECONDS)
 
     def record_fn(duration):
         return fingerprint.record_clip(duration, sample_rate=SAMPLE_RATE, device=device)
@@ -96,7 +111,14 @@ def run(api_key: str, device: int | None = None, poll_interval: float = POLL_INT
     print("Listener running. Waiting for an album to be selected...")
     while True:
         try:
-            action = tick(conn, api_key, detector, gap_check_fn=gap_check_fn, record_fn=record_fn)
+            action = tick(
+                conn,
+                api_key,
+                detector,
+                stopped_detector=stopped_detector,
+                gap_check_fn=gap_check_fn,
+                record_fn=record_fn,
+            )
             if action:
                 print(f"[{datetime.now()}] {action}")
         except Exception as exc:  # keep the daemon alive on transient errors (network, mic, etc.)

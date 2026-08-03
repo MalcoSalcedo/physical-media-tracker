@@ -135,3 +135,28 @@ def now_playing(request: Request):
     return templates.TemplateResponse(
         request, "now_playing.html", {"current": current, "tracks": tracks, "history": history}
     )
+
+
+@app.get("/api/now-playing")
+def api_now_playing():
+    """Polled by the browser to refresh the banner/now-playing page without
+    a manual reload."""
+    with get_connection() as conn:
+        current = catalog.get_now_playing(conn)
+    if current is None:
+        return {
+            "status": None,
+            "track_title": None,
+            "artist": None,
+            "album": None,
+            "cover_art_url": None,
+            "last_updated": None,
+        }
+    return {
+        "status": current["status"],
+        "track_title": current["track_title"],
+        "artist": current["artist"],
+        "album": current["album"],
+        "cover_art_url": current["cover_art_url"],
+        "last_updated": _timeago(current["started_at"]),
+    }

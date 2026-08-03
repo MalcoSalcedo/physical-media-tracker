@@ -24,6 +24,7 @@ def test_next_track_title_returns_none_for_unknown_title():
 def test_decide_next_action_identifies_when_no_track_known_and_signal_present():
     action = decide_next_action(
         current_track_title=None,
+        status="waiting",
         started_at=None,
         tracks=TRACKS,
         gap_detected=False,
@@ -39,6 +40,7 @@ def test_decide_next_action_waits_when_no_track_known_and_no_signal():
     # on it.
     action = decide_next_action(
         current_track_title=None,
+        status="waiting",
         started_at=None,
         tracks=TRACKS,
         gap_detected=False,
@@ -52,6 +54,7 @@ def test_decide_next_action_waits_before_track_duration_elapses():
     started_at = datetime(2026, 1, 1, 12, 0, 0)
     action = decide_next_action(
         current_track_title="15 Step",
+        status="playing",
         started_at=started_at,
         tracks=TRACKS,
         gap_detected=False,
@@ -65,6 +68,7 @@ def test_decide_next_action_advances_once_track_duration_elapses_with_no_gap():
     started_at = datetime(2026, 1, 1, 12, 0, 0)
     action = decide_next_action(
         current_track_title="15 Step",
+        status="playing",
         started_at=started_at,
         tracks=TRACKS,
         gap_detected=False,
@@ -72,6 +76,24 @@ def test_decide_next_action_advances_once_track_duration_elapses_with_no_gap():
         now=started_at + timedelta(seconds=300),
     )
     assert action == ADVANCE
+
+
+def test_decide_next_action_waits_when_duration_elapsed_but_no_signal():
+    # A track that stopped playing partway through (not at a clean
+    # boundary) shouldn't get silently advanced to "next track in album
+    # order" just because its stored duration timer ran out - nothing is
+    # actually playing, so there's nothing to advance to.
+    started_at = datetime(2026, 1, 1, 12, 0, 0)
+    action = decide_next_action(
+        current_track_title="15 Step",
+        status="playing",
+        started_at=started_at,
+        tracks=TRACKS,
+        gap_detected=False,
+        has_signal=False,
+        now=started_at + timedelta(seconds=300),
+    )
+    assert action == WAIT
 
 
 def test_decide_next_action_identifies_on_gap_at_expected_track_boundary():
@@ -82,6 +104,7 @@ def test_decide_next_action_identifies_on_gap_at_expected_track_boundary():
     started_at = datetime(2026, 1, 1, 12, 0, 0)
     action = decide_next_action(
         current_track_title="15 Step",
+        status="playing",
         started_at=started_at,
         tracks=TRACKS,
         gap_detected=True,
@@ -97,6 +120,7 @@ def test_decide_next_action_identifies_on_gap_before_expected_boundary():
     started_at = datetime(2026, 1, 1, 12, 0, 0)
     action = decide_next_action(
         current_track_title="15 Step",
+        status="playing",
         started_at=started_at,
         tracks=TRACKS,
         gap_detected=True,
@@ -112,6 +136,7 @@ def test_decide_next_action_identifies_on_gap_long_after_expected_boundary():
     started_at = datetime(2026, 1, 1, 12, 0, 0)
     action = decide_next_action(
         current_track_title="15 Step",
+        status="playing",
         started_at=started_at,
         tracks=TRACKS,
         gap_detected=True,
@@ -125,6 +150,7 @@ def test_decide_next_action_identifies_on_gap_when_duration_unknown():
     tracks_no_duration = [{"title": "15 Step", "duration_seconds": None}]
     action = decide_next_action(
         current_track_title="15 Step",
+        status="playing",
         started_at=datetime(2026, 1, 1, 12, 0, 0),
         tracks=tracks_no_duration,
         gap_detected=True,
@@ -138,10 +164,40 @@ def test_decide_next_action_waits_when_duration_unknown_and_no_gap():
     tracks_no_duration = [{"title": "15 Step", "duration_seconds": None}]
     action = decide_next_action(
         current_track_title="15 Step",
+        status="playing",
         started_at=datetime(2026, 1, 1, 12, 0, 0),
         tracks=tracks_no_duration,
         gap_detected=False,
         has_signal=True,
         now=datetime(2026, 1, 1, 12, 5, 0),
+    )
+    assert action == WAIT
+
+
+def test_decide_next_action_identifies_when_stopped_and_signal_resumes():
+    # Sustained silence flipped status to "stopped"; once signal comes
+    # back (e.g. the next disc starts playing), re-identify from scratch
+    # rather than trusting the stale track/timer state.
+    action = decide_next_action(
+        current_track_title="15 Step",
+        status="stopped",
+        started_at=datetime(2026, 1, 1, 12, 0, 0),
+        tracks=TRACKS,
+        gap_detected=False,
+        has_signal=True,
+        now=datetime(2026, 1, 1, 12, 10, 0),
+    )
+    assert action == IDENTIFY
+
+
+def test_decide_next_action_waits_while_stopped_and_still_silent():
+    action = decide_next_action(
+        current_track_title="15 Step",
+        status="stopped",
+        started_at=datetime(2026, 1, 1, 12, 0, 0),
+        tracks=TRACKS,
+        gap_detected=False,
+        has_signal=False,
+        now=datetime(2026, 1, 1, 12, 10, 0),
     )
     assert action == WAIT

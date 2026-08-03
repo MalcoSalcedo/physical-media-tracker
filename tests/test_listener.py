@@ -26,6 +26,14 @@ def detector():
     return GapDetector(sample_rate=44100)
 
 
+@pytest.fixture
+def stopped_detector():
+    # Tiny threshold so a single silent gap-check clip is enough to fire it
+    # in tests, instead of needing ~30s worth of real STOPPED_SILENCE_SECONDS
+    # chunks like production uses.
+    return GapDetector(sample_rate=44100, min_gap_seconds=0.001)
+
+
 def _quiet_gap_check():
     """A gap_check_fn with real signal that never reports a gap (below
     GapDetector's min duration) - "quiet" from the gap detector's
@@ -126,3 +134,48 @@ def test_tick_waits_when_track_still_within_its_duration(conn, detector):
     assert action == listener.timer.WAIT
     identify_mock.assert_not_called()
     assert catalog.get_now_playing(conn)["track_title"] == "15 Step"
+
+
+def test_tick_marks_stopped_when_stopped_detector_fires_while_playing(conn, detector, stopped_detector):
+    item_id = catalog.save_item(conn, artist="Radiohead", album="In Rainbows", format="Vinyl")
+    catalog.save_tracks(conn, item_id, [{"title": "15 Step", "duration_seconds": 237}])
+    catalog.set_active_album(conn, item_id)
+    catalog.update_current_track(conn, item_id, "15 Step", "fingerprint")
+
+    with patch("listener.identify.identify_current_track") as identify_mock:
+        action = listener.tick(
+            conn,
+            "fake-key",
+            detector,
+            stopped_detector=stopped_detector,
+            gap_check_fn=_silent_gap_check,
+        )
+
+    assert action == listener.timer.WAIT
+    identify_mock.assert_not_called()
+    current = catalog.get_now_playing(conn)
+    assert current["status"] == "stopped"
+    assert current["track_title"] == "15 Step"  # last-known title kept for display
+
+
+def test_tick_reidentifies_when_stopped_and_signal_resumes(conn, detector, stopped_detector):
+    item_id = catalog.save_item(conn, artist="Radiohead", album="In Rainbows", format="Vinyl")
+    catalog.save_tracks(conn, item_id, [{"title": "15 Step", "duration_seconds": 237}])
+    catalog.set_active_album(conn, item_id)
+    catalog.update_current_track(conn, item_id, "15 Step", "fingerprint")
+    catalog.mark_stopped(conn, item_id)
+
+    with patch("listener.identify.identify_current_track", return_value="Bodysnatchers") as identify_mock:
+        action = listener.tick(
+            conn,
+            "fake-key",
+            detector,
+            stopped_detector=stopped_detector,
+            gap_check_fn=_quiet_gap_check,
+        )
+
+    assert action == listener.timer.IDENTIFY
+    identify_mock.assert_called_once()
+    current = catalog.get_now_playing(conn)
+    assert current["status"] == "playing"
+    assert current["track_title"] == "Bodysnatchers"
