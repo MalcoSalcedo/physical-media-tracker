@@ -6,6 +6,12 @@
 <p>Nothing selected yet. <a href="/listen">Pick an album</a> to start.</p>
 {% else %}
 
+{% if current.status == "stopped" %}
+<p>Playback appears to have stopped. Last playing: <strong>{{ current.track_title }}</strong></p>
+{% elif current.status == "waiting" %}
+<p>Waiting for the current track to be identified...</p>
+{% endif %}
+
 {% if tracks %}
 <h2>Tracklist</h2>
 <ol>

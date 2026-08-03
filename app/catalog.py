@@ -101,13 +101,14 @@ def set_active_album(conn: sqlite3.Connection, collection_id: int) -> None:
     """Mark an album as selected/"now listening", pending track identification."""
     conn.execute(
         """
-        INSERT INTO now_playing (id, collection_id, track_title, source)
-        VALUES (1, ?, NULL, 'manual')
+        INSERT INTO now_playing (id, collection_id, track_title, source, status)
+        VALUES (1, ?, NULL, 'manual', 'waiting')
         ON CONFLICT (id) DO UPDATE SET
             collection_id = excluded.collection_id,
             track_title = NULL,
             started_at = datetime('now'),
-            source = 'manual'
+            source = 'manual',
+            status = 'waiting'
         """,
         (collection_id,),
     )
@@ -159,7 +160,8 @@ def update_current_track(
     """Set the identified/advanced track as now playing and log it to history."""
     conn.execute(
         """
-        UPDATE now_playing SET track_title = ?, started_at = datetime('now'), source = ?
+        UPDATE now_playing
+        SET track_title = ?, started_at = datetime('now'), source = ?, status = 'playing'
         WHERE id = 1 AND collection_id = ?
         """,
         (track_title, source, collection_id),
@@ -167,6 +169,20 @@ def update_current_track(
     conn.execute(
         "INSERT INTO history (collection_id, track_title) VALUES (?, ?)",
         (collection_id, track_title),
+    )
+    conn.commit()
+
+
+def mark_stopped(conn: sqlite3.Connection, collection_id: int) -> None:
+    """Flag that playback has likely stopped (sustained silence observed).
+
+    Keeps the last-known track_title around for display ("stopped, was
+    playing: X") - status is what decision logic actually keys off of. See
+    app.timer.decide_next_action.
+    """
+    conn.execute(
+        "UPDATE now_playing SET status = 'stopped' WHERE id = 1 AND collection_id = ?",
+        (collection_id,),
     )
     conn.commit()
 
