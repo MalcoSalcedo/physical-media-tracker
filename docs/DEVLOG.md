@@ -533,3 +533,31 @@ skip-detection logic is fixed and re-verified live, not just by unit
 tests. The album-picking lesson (favor short tracklists for fast
 iteration) and the PID-verification habit are both worth remembering for
 the next live session.
+
+## 2026-08-05 (cont.) — Closing the duplicate-instance gap for real
+
+The stray-process incident earlier today was fixed as a testing-workflow
+problem (verify real PIDs before killing), but the underlying risk is an
+app-level gap, not just a today's-session annoyance: nothing stops two
+real `listener.py` instances from running against the same DB
+concurrently - a systemd restart racing a manual debug run, for instance -
+and two writers polling and updating `now_playing`/`history` at once is a
+real correctness risk, not just wasted resources.
+
+Added a pidfile lock (`data/listener.pid`, gitignored alongside the DB
+itself): `run()` refuses to start if the file names a PID that's still
+alive, and cleans up its own lock file on exit via `try`/`finally`. A
+stale lock (process killed forcefully, e.g. `taskkill -F` or a Pi power
+loss - neither runs Python's `finally`) is detected and silently
+overwritten rather than blocking legitimate restarts. The liveness check
+(`_pid_is_running`) needed a small platform branch: `os.kill(pid, 0)`
+works correctly on Linux (the real Pi target) but not on Windows (used
+for local dev), so Windows goes through `OpenProcess`/`CloseHandle` via
+`ctypes` instead.
+
+Verified live, not just via the 5 new unit tests: started a real instance,
+attempted a second in parallel - refused immediately with a clear message
+naming the holding PID, no traceback. Force-killed the first (simulating
+a crash) and confirmed a fresh instance correctly detected the stale lock
+and started anyway, overwriting it with its own PID. No leaked processes
+in either case.

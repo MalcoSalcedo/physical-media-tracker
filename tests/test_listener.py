@@ -1,3 +1,4 @@
+import os
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -8,6 +9,10 @@ import pytest
 import listener
 from app import catalog
 from app.gap_detector import GapDetector
+
+# Astronomically larger than any real PID on Linux (pid_max) or Windows,
+# used as a reliably-not-running marker for stale-lock tests.
+DEFINITELY_DEAD_PID = 999999999
 
 SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schema.sql"
 
@@ -246,3 +251,46 @@ def test_tick_reidentifies_when_stopped_and_signal_resumes(conn, detector, stopp
     current = catalog.get_now_playing(conn)
     assert current["status"] == "playing"
     assert current["track_title"] == "Bodysnatchers"
+
+
+def test_acquire_lock_writes_current_pid(tmp_path):
+    pid_path = tmp_path / "listener.pid"
+
+    listener.acquire_lock(pid_path)
+
+    assert int(pid_path.read_text().strip()) == os.getpid()
+
+
+def test_acquire_lock_raises_when_another_instance_is_running(tmp_path):
+    # Our own pid is, definitionally, a running process - stands in for
+    # "another listener.py instance is live" without needing to actually
+    # spawn one.
+    pid_path = tmp_path / "listener.pid"
+    pid_path.write_text(str(os.getpid()))
+
+    with pytest.raises(RuntimeError, match="already running"):
+        listener.acquire_lock(pid_path)
+
+
+def test_acquire_lock_overwrites_a_stale_lock_file(tmp_path):
+    pid_path = tmp_path / "listener.pid"
+    pid_path.write_text(str(DEFINITELY_DEAD_PID))
+
+    listener.acquire_lock(pid_path)
+
+    assert int(pid_path.read_text().strip()) == os.getpid()
+
+
+def test_release_lock_removes_the_file(tmp_path):
+    pid_path = tmp_path / "listener.pid"
+    pid_path.write_text(str(os.getpid()))
+
+    listener.release_lock(pid_path)
+
+    assert not pid_path.exists()
+
+
+def test_release_lock_is_a_no_op_when_file_is_already_gone(tmp_path):
+    pid_path = tmp_path / "listener.pid"
+
+    listener.release_lock(pid_path)  # should not raise
