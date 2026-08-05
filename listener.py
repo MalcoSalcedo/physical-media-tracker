@@ -13,13 +13,21 @@ import os
 import sqlite3
 import time
 from datetime import datetime
+from pathlib import Path
 
 from dotenv import load_dotenv
 
 from app import catalog, fingerprint, identify, timer
-from app.db import get_connection
+from app.db import DB_PATH, get_connection
 from app.gap_detector import GapDetector, rms
 
+# A second listener.py instance racing the first against the same DB is a
+# real risk, not a hypothetical one - happened by accident during live
+# testing on 2026-08-05 (a stale process from an earlier test run kept
+# polling alongside a freshly-started one). A pidfile next to the DB
+# refuses to let a second instance start rather than silently corrupting
+# now_playing/history with two writers.
+PID_PATH = DB_PATH.parent / "listener.pid"
 GAP_CHECK_CLIP_SECONDS = 2
 # Deliberately short: gap-check recording (~2s) plus this sleep is the
 # listener's *entire* window of awareness between samples. A 5s gap here
@@ -39,6 +47,51 @@ STOPPED_SILENCE_SECONDS = 30
 
 def _parse_started_at(value: str) -> datetime:
     return datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+
+
+def _pid_is_running(pid: int) -> bool:
+    """Best-effort liveness check, portable enough for both the Pi (Linux) and local dev (Windows)."""
+    if os.name == "nt":
+        import ctypes
+
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return False
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return True
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def acquire_lock(pid_path: Path = PID_PATH) -> None:
+    """Refuse to start if another listener.py instance already holds the lock.
+
+    A stale lock file (process no longer running - e.g. a crash that
+    skipped cleanup) is treated as no lock at all and overwritten.
+    """
+    if pid_path.exists():
+        try:
+            existing_pid = int(pid_path.read_text().strip())
+        except ValueError:
+            existing_pid = None
+        if existing_pid is not None and _pid_is_running(existing_pid):
+            raise RuntimeError(
+                f"listener.py is already running (pid {existing_pid}, lock file {pid_path}). "
+                "Stop it first, or delete the lock file if you're sure it's stale."
+            )
+    pid_path.parent.mkdir(parents=True, exist_ok=True)
+    pid_path.write_text(str(os.getpid()))
+
+
+def release_lock(pid_path: Path = PID_PATH) -> None:
+    try:
+        pid_path.unlink()
+    except FileNotFoundError:
+        pass
 
 
 def tick(
@@ -117,34 +170,38 @@ def tick(
 
 
 def run(api_key: str, device: int | None = None, poll_interval: float = POLL_INTERVAL_SECONDS) -> None:
-    conn = get_connection()
-    detector = GapDetector(SAMPLE_RATE)
-    stopped_detector = GapDetector(SAMPLE_RATE, min_gap_seconds=STOPPED_SILENCE_SECONDS)
-    pending_gap: dict = {}
+    acquire_lock()
+    try:
+        conn = get_connection()
+        detector = GapDetector(SAMPLE_RATE)
+        stopped_detector = GapDetector(SAMPLE_RATE, min_gap_seconds=STOPPED_SILENCE_SECONDS)
+        pending_gap: dict = {}
 
-    def record_fn(duration):
-        return fingerprint.record_clip(duration, sample_rate=SAMPLE_RATE, device=device)
+        def record_fn(duration):
+            return fingerprint.record_clip(duration, sample_rate=SAMPLE_RATE, device=device)
 
-    def gap_check_fn():
-        return record_fn(GAP_CHECK_CLIP_SECONDS)
+        def gap_check_fn():
+            return record_fn(GAP_CHECK_CLIP_SECONDS)
 
-    print("Listener running. Waiting for an album to be selected...")
-    while True:
-        try:
-            action = tick(
-                conn,
-                api_key,
-                detector,
-                stopped_detector=stopped_detector,
-                pending_gap=pending_gap,
-                gap_check_fn=gap_check_fn,
-                record_fn=record_fn,
-            )
-            if action:
-                print(f"[{datetime.now()}] {action}")
-        except Exception as exc:  # keep the daemon alive on transient errors (network, mic, etc.)
-            print(f"[{datetime.now()}] tick failed: {exc!r}")
-        time.sleep(poll_interval)
+        print("Listener running. Waiting for an album to be selected...")
+        while True:
+            try:
+                action = tick(
+                    conn,
+                    api_key,
+                    detector,
+                    stopped_detector=stopped_detector,
+                    pending_gap=pending_gap,
+                    gap_check_fn=gap_check_fn,
+                    record_fn=record_fn,
+                )
+                if action:
+                    print(f"[{datetime.now()}] {action}")
+            except Exception as exc:  # keep the daemon alive on transient errors (network, mic, etc.)
+                print(f"[{datetime.now()}] tick failed: {exc!r}")
+            time.sleep(poll_interval)
+    finally:
+        release_lock()
 
 
 if __name__ == "__main__":
@@ -156,4 +213,7 @@ if __name__ == "__main__":
     parser.add_argument("--poll-interval", type=float, default=POLL_INTERVAL_SECONDS)
     args = parser.parse_args()
 
-    run(os.environ["ACOUSTID_API_KEY"], device=args.device, poll_interval=args.poll_interval)
+    try:
+        run(os.environ["ACOUSTID_API_KEY"], device=args.device, poll_interval=args.poll_interval)
+    except RuntimeError as exc:
+        raise SystemExit(f"Error: {exc}") from exc
