@@ -78,6 +78,51 @@ single blind fingerprint-and-poll loop.
 - [x] Basic responsive styling (doesn't need to be fancy — functional and clean)
 - [ ] Screenshot or short screen recording for the README
 
+## Phase 3.5 — Real-world reliability & hardening
+
+Inserted after two real bugs turned up during live CD-player testing on
+2026-08-05: a gap-triggered re-identify that fired into silence instead of
+waiting for signal to resume (starving the stopped-detector of the window
+it needed), and a duplicate-`listener.py`-instance risk with no protection
+against two writers hitting the same DB. Both are fixed, but they're a
+sign the pipeline needs a deliberate hardening pass — not more features —
+before Phase 4 expands its surface area (public internet exposure) on top
+of it. See `docs/DEVLOG.md`, 2026-08-05 entries, for full details on both.
+
+- [x] Fix: defer gap-triggered re-identify until signal actually resumes
+- [x] Fix: prevent two `listener.py` instances from running concurrently (pidfile lock)
+- [ ] Full-album soak test: play one album start to finish, uninterrupted,
+      confirm every track transition lands correctly (no deliberate
+      pauses/skips — just normal listening)
+- [ ] Backward skips and rapid back-to-back skips (partial pass on
+      2026-08-01 — some rapid sequences still slipped through before
+      self-correcting; re-verify with today's fixes in place)
+- [ ] Multiple pause/resume cycles in a row on the same track
+- [ ] Switch albums on `/listen` mid-track while the listener is running;
+      confirm state resets cleanly instead of mixing old/new album data
+- [ ] Crash recovery: kill `listener.py` mid-identify, confirm it resumes
+      cleanly from whatever `now_playing` state is on disk
+- [ ] Confirm `listener.service`'s systemd config restarts on failure and
+      doesn't spin up a duplicate instance
+- [ ] Reproduce and address the multi-release-barcode bug (Discogs
+      returning several releases for one UPC; `search_by_barcode` silently
+      takes the first result, which isn't always the right pressing —
+      found 2026-07-20, not yet fixed)
+- [ ] Run `db.py`'s migration path against a copy of the real production
+      DB, not just a fresh test DB
+- [ ] Re-test a large tracklist album (20+ tracks) and decide whether the
+      AcoustID per-track-duration lookup cost (ADR-003) needs its own fix
+      for big albums
+- [ ] Test a seamlessly-mixed album (no audible gaps between tracks) —
+      relies entirely on duration-timer ADVANCE since the gap detector
+      never fires
+- [ ] Test a quiet/ambient album — check whether genuinely quiet (but not
+      silent) passages get misread as gaps or stopped playback
+- [ ] Test AcoustID/Discogs API being down or timing out mid-operation;
+      confirm graceful degradation instead of a hang
+- [ ] DEVLOG entry: summarize findings — what's now considered rock solid,
+      and what known limitations remain going into Phase 4
+
 ## Phase 4 — Public sharing
 
 - [ ] Register/point a domain at Cloudflare (or use a free subdomain if applicable)
