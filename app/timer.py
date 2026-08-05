@@ -29,8 +29,16 @@ def decide_next_action(
     """Decide what the listener should do on this tick.
 
     IDENTIFY: no track is known yet (or playback is believed stopped)
-    *and* audio is actually playing, or a gap fired at all. Any detected
-    gap always triggers a full re-identification rather than guessing
+    *and* audio is actually playing, or a gap was detected. Note
+    `gap_detected` is defined by the caller (listener.py) to mean "a gap
+    was observed *and* signal has since resumed" - not merely "silence
+    just crossed the threshold." Firing on bare silence would record and
+    query AcoustID against nothing (confirmed live: a real pause burned
+    ~176s on a doomed lookup) and would also eat the window the
+    stopped-detection logic needs to reach its own threshold, so the
+    caller defers the actual signal until there's audio worth
+    fingerprinting again. Any detected gap always triggers a full
+    re-identification rather than guessing
     whether it "looks like" a normal transition vs. a skip -
     re-identification is position-independent (it searches the whole
     album, not just "the next track"), so it handles forward skips,

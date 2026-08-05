@@ -47,6 +47,7 @@ def tick(
     detector: GapDetector,
     *,
     stopped_detector: GapDetector | None = None,
+    pending_gap: dict | None = None,
     gap_check_fn=None,
     record_fn=None,
     sample_rate: int = SAMPLE_RATE,
@@ -57,14 +58,32 @@ def tick(
     if current is None:
         return None
 
+    if pending_gap is None:
+        pending_gap = {}
+
     collection_id = current["collection_id"]
     tracks = [dict(t) for t in catalog.get_tracks(conn, collection_id)]
     started_at = _parse_started_at(current["started_at"]) if current["track_title"] else None
     status = current["status"]
 
     gap_clip = gap_check_fn() if gap_check_fn else fingerprint.record_clip(GAP_CHECK_CLIP_SECONDS)
-    gap_detected = detector.process_chunk(gap_clip)
+    gap_fired = detector.process_chunk(gap_clip)
     has_signal = rms(gap_clip) >= detector.silence_threshold
+
+    # A gap firing means silence just crossed the threshold - which, by
+    # construction, is exactly when there's nothing to fingerprint yet.
+    # Recording and querying AcoustID right then wastes the whole escalating
+    # clip-length sweep on silence (confirmed live: ~176s burned on nothing
+    # during a real pause) and, worse, eats the exact window the stopped-
+    # detector needs to reach its own threshold. So a gap only arms a
+    # "waiting to re-identify" flag; the actual re-identify is deferred
+    # until audio is actually present again, which is also the only moment
+    # it could possibly succeed.
+    if gap_fired:
+        pending_gap["waiting_for_signal"] = True
+    gap_detected = pending_gap.get("waiting_for_signal", False) and has_signal
+    if gap_detected:
+        pending_gap["waiting_for_signal"] = False
 
     if stopped_detector is not None:
         stopped_fired = stopped_detector.process_chunk(gap_clip)
@@ -101,6 +120,7 @@ def run(api_key: str, device: int | None = None, poll_interval: float = POLL_INT
     conn = get_connection()
     detector = GapDetector(SAMPLE_RATE)
     stopped_detector = GapDetector(SAMPLE_RATE, min_gap_seconds=STOPPED_SILENCE_SECONDS)
+    pending_gap: dict = {}
 
     def record_fn(duration):
         return fingerprint.record_clip(duration, sample_rate=SAMPLE_RATE, device=device)
@@ -116,6 +136,7 @@ def run(api_key: str, device: int | None = None, poll_interval: float = POLL_INT
                 api_key,
                 detector,
                 stopped_detector=stopped_detector,
+                pending_gap=pending_gap,
                 gap_check_fn=gap_check_fn,
                 record_fn=record_fn,
             )

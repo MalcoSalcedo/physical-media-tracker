@@ -450,3 +450,86 @@ Next real test: confirm the stopped detector's 30-second threshold is
 sane against an actual CD player (does the player itself go silent for
 that long between tracks or at end-of-disc in a way that could false-
 trigger it?) - not yet checked against real hardware, only reasoned about.
+
+## 2026-08-05 — Real-hardware test of the stopped state, and a real bug it found
+
+Went back to the CD player to verify the previous session's stopped-state
+work, which had only been checked by hand-editing the DB. Found a genuine
+bug the same day, fixed it, and re-verified live.
+
+**First real signal: natural end-of-album silence works correctly.** The
+album under test (Radiohead, *OK Computer OKNOTOK*, 23 tracks) had
+finished playing on its own a couple minutes before the listener even
+started. Once running, it took ~30 seconds of its *own* measured silence
+to flip `status` to `stopped` - matching `STOPPED_SILENCE_SECONDS`
+almost exactly, confirmed against both the DB and the live
+`/api/now-playing` endpoint. Side finding, not a bug: a 23-track album
+means up to ~24 sequential AcoustID duration-guesses per identify
+attempt (per ADR-003), which made the very first identify on this album
+take several minutes and miss - a real scaling cost of that fix worth
+remembering when picking a test album; short-tracklist albums (10-14
+tracks) stay fast.
+
+**Second real signal, this one exposed an actual bug.** Switched to *The
+Low End Theory* (already a proven real-hardware match today) to test the
+resume-from-stopped path: paused mid-track for about a minute, then
+resumed from the same point. Expected `stopped` to appear cleanly; instead
+the listener went silent (no log output at all) for nearly 3 minutes.
+Root cause: `decide_next_action`'s `if gap_detected: return IDENTIFY`
+branch doesn't check `has_signal` - and a gap fires *precisely because*
+the current chunk is silent. So the instant the short gap detector crossed
+its 1.5s threshold, the listener immediately started recording into the
+pause and running a full escalating AcoustID sweep (20s + 45s + 90s clips)
+against what was, for a chunk of that span, literal silence. That single
+blocking call ate up wall-clock time the stopped-detector needed to reach
+its own 30s threshold from ticks that never got to run - a 60-second real
+pause never actually surfaced as `stopped` in the UI, because measuring it
+got interrupted by a doomed identify call.
+
+**The fix:** stopped gating the re-identify on "a gap just fired" and
+started gating it on "a gap fired *and* signal has since resumed."
+Implemented as a small `pending_gap` flag threaded through `listener.py`'s
+`tick()`/`run()` (deliberately not baked into `GapDetector` itself, since
+`stopped_detector` reuses that same class and needs its original "fire
+while still silent" semantics to keep working). `decide_next_action`
+itself needed no logic changes - only its caller's contract for what
+`gap_detected` means, documented in its docstring. Added two new
+`listener.py` tests: a gap firing during silence stays `WAIT` (and
+remembers the gap instead of acting on it), and re-identify only fires
+once signal actually returns. 84 tests passing.
+
+**Re-tested live from scratch, and it fully validated the fix:** paused
+Excursions ~40s in, waited a minute, resumed - the log went from a clean,
+continuous stream of cheap `wait` ticks straight into `stopped`, with zero
+wasted identify calls during the pause itself (compare to the ~176s wasted
+on the pre-fix run). Once resumed, the system correctly retried
+identification (the first attempt missed - a known, separate AcoustID
+reliability question, not a bug; the second succeeded) and landed on
+"Buggin' Out." That looked like a wrong match at first glance since the
+CD had only been paused at Excursions' 40s mark - but it was actually
+correct: because the resume-side identification took a couple of minutes
+of real AcoustID lookups to resolve, the CD had genuinely kept playing in
+the background and had already moved past Excursions for real by the time
+either identify attempt recorded its clip. Each attempt fingerprints
+whatever's *actually* playing at that moment, not the state from when the
+gap first fired - the position-independent design (from the 2026-08-01
+skip-detection fix) doing exactly what it was built to do, just visible
+here in a case that wasn't a deliberate skip.
+
+**One process-hygiene bug caught along the way, unrelated to the app
+itself:** `taskkill //F //PID $!` (bash's last-background-PID) repeatedly
+killed the wrong process on this Windows/git-bash setup, silently leaving
+old `listener.py` instances running against the same DB while new ones
+started - at one point two were running concurrently. Fixed the testing
+workflow (not the app) by verifying real PIDs via
+`Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object
+{ $_.CommandLine -like '*listener.py*' }` before every kill, rather than
+trusting `$!`.
+
+Net for today: the stopped-state feature from 2026-08-03 is now verified
+against real CD player audio in both directions (entering *and* leaving
+`stopped`), and a real bug in how it interacted with the existing
+skip-detection logic is fixed and re-verified live, not just by unit
+tests. The album-picking lesson (favor short tracklists for fast
+iteration) and the PID-verification habit are both worth remembering for
+the next live session.
