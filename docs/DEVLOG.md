@@ -605,3 +605,51 @@ non-adversarial playback since the 2026-08-05 fixes landed, and it held up
 cleanly. Phase 3.5's soak-test item is checked off; the initial three
 misses on "Movin' Out" are logged as a real AcoustID coverage data point,
 separate from anything today's testing was meant to fix.
+
+## 2026-08-18 (cont.) — Second soak test, and an unexplained (but harmless) anomaly
+
+Ran a second full-album soak test back to back with the first, same
+session: cataloged another fresh CD (Kanye West, *808s & Heartbreak* -
+12 tracks, ~46 min), re-verified the Focusrite was still on device index 3
+before starting (it was), and played it start to finish.
+
+**Clean result overall:** identified instantly this time (no misses on
+track 1), then correctly tracked all 9 remaining transitions - a healthy
+mix of pure timer-based `advance` (several segued/seamless-sounding
+transitions with no detected gap, exercising that code path for real for
+the first time) and gap-triggered `identify` (including one real AcoustID
+miss on the "See You In My Nightmares" → "Coldest Winter" boundary that
+self-corrected via the duration timer, same graceful-degradation pattern
+seen before). The final track, "Pinocchio Story (Live From Singapore)",
+has no stored duration in the Discogs data - a genuinely different code
+path from anything soak-tested so far, since ADVANCE can never fire off an
+unknown duration. Confirmed the stopped-detector is what catches this
+case: `status` correctly reached `stopped` off silence alone, with no
+duration-based fallback needed or possible.
+
+**One real anomaly, not yet explained.** Immediately after a successful
+identify landed on "Amazing" (fresh `started_at`), the very next tick
+printed `advance` only ~3 seconds later - which `decide_next_action`
+should not be able to produce, since ADVANCE requires the current track's
+full stored duration (238s for "Amazing") to have elapsed. Traced through
+`tick()`/`decide_next_action` line by line against the actual current code
+(not from memory) and ruled out the obvious suspects: no duplicate
+`listener.py` instance was running (checked directly), the stored duration
+data isn't corrupted, `next_track_title` correctly resolves "Love
+Lockdown" as `next_title` given the real current row, and there's no
+connection-caching mechanism that could make a later tick see stale data
+in a single-threaded, single-connection process. Despite the odd print,
+the actual `now_playing` row was *not* modified by that tick (title and
+`started_at` were unchanged immediately after), and the subsequent,
+correctly-timed `advance` ~4 minutes later used the original, undisturbed
+`started_at` anchor - so whatever produced that one stray print didn't
+corrupt any state. Logged as a real open question rather than swept under
+the rug; worth a focused offline debugging session (e.g. reproducing via a
+targeted test with two back-to-back `tick()` calls) rather than guessing
+further live. Added to the Phase 3.5 checklist.
+
+Net for the day: two full real albums soak-tested back to back, 15 of 16
+total transitions across both runs landed correctly (the one miss
+self-corrected via the timer, as designed), the no-duration-track edge
+case is now confirmed working, and one genuine unexplained-but-harmless
+log anomaly is on record for follow-up.

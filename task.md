@@ -94,7 +94,16 @@ of it. See `docs/DEVLOG.md`, 2026-08-05 entries, for full details on both.
 - [x] Full-album soak test: play one album start to finish, uninterrupted,
       confirm every track transition lands correctly (no deliberate
       pauses/skips — just normal listening) — 2026-08-18, Billy Joel's
-      *The Stranger*; see DEVLOG
+      *The Stranger* and Kanye West's *808s & Heartbreak* (2 full albums,
+      15/16 transitions correct on the first pass, the one miss
+      self-corrected via the timer as designed); see DEVLOG
+- [ ] Investigate 2026-08-18 anomaly: a stray `advance` printed ~3s after
+      a successful identify, which `decide_next_action` shouldn't be able
+      to produce given the current track's duration hadn't remotely
+      elapsed. Didn't corrupt any state (traced and ruled out duplicate
+      instances, data corruption, and stale reads live), but the root
+      cause is still unknown — reproduce offline with a targeted
+      back-to-back `tick()` test rather than guessing further live
 - [ ] Backward skips and rapid back-to-back skips (partial pass on
       2026-08-01 — some rapid sequences still slipped through before
       self-correcting; re-verify with today's fixes in place)
@@ -116,7 +125,13 @@ of it. See `docs/DEVLOG.md`, 2026-08-05 entries, for full details on both.
       for big albums
 - [ ] Test a seamlessly-mixed album (no audible gaps between tracks) —
       relies entirely on duration-timer ADVANCE since the gap detector
-      never fires
+      never fires (partial evidence 2026-08-18: several individual
+      transitions on *808s & Heartbreak* were gapless and correctly caught
+      by pure timer ADVANCE, but not tested against a full wall-to-wall
+      mixed album like a DJ set)
+- [x] Confirmed a track with no stored duration can't be caught by the
+      duration timer and correctly relies on the stopped-detector instead
+      — 2026-08-18, *808s & Heartbreak*'s closing live track; see DEVLOG
 - [ ] Test a quiet/ambient album — check whether genuinely quiet (but not
       silent) passages get misread as gaps or stopped playback
 - [ ] Test AcoustID/Discogs API being down or timing out mid-operation;
