@@ -561,3 +561,47 @@ naming the holding PID, no traceback. Force-killed the first (simulating
 a crash) and confirmed a fresh instance correctly detected the stale lock
 and started anyway, overwriting it with its own PID. No leaked processes
 in either case.
+
+## 2026-08-18 — Full-album soak test, a stale device index, and a clean run
+
+First real session back after a break, picking Phase 3.5's checklist back
+up. Cataloged a new CD live (Billy Joel, *The Stranger* - 9 tracks,
+~40 min) specifically to exercise the full pipeline end to end (barcode
+scan → catalog → select → play), not just replay an already-proven album.
+
+**Immediate real bug, unrelated to anything fixed so far:** the listener
+sat on `wait` indefinitely with no signal detected at all, despite the CD
+audibly playing. Root cause: the Focusrite's device index had shifted from
+`2` to `3` since the last session - Windows re-enumerated it (likely after
+a reboot or USB reconnect between sessions), and `listener.py` was quietly
+recording from index 2, which now resolves to an unrelated mic. Worth
+remembering for next time: device indices aren't guaranteed stable across
+reboots on this Windows dev setup, so a "no signal at all" symptom should
+prompt a `sounddevice.query_devices()` check before assuming a software
+regression. (The Pi deployment uses a fixed physical USB port, which is
+more stable in practice, but not something to take for granted there
+either.)
+
+**The soak test itself, once the device was fixed:** rewound to track 1
+for a clean run. The first three identify attempts (all on "Movin' Out")
+missed - each a real ~2m50s escalating AcoustID sweep that came back
+empty, a new coverage-gap data point for this pressing, not a pipeline
+bug. The fourth attempt caught up correctly once real playback had reached
+track 3 ("Just The Way You Are") - a good demonstration of the
+position-independent design self-correcting rather than getting stuck.
+From there: **6 consecutive clean transitions** through the rest of the
+album, each landing within a couple seconds of the track's actual stored
+duration. The album's natural end correctly triggered `stopped`, with one
+small wrinkle worth noting: a stray `identify` fired a couple minutes
+after the last track's expected end, most likely a brief mechanical noise
+from the CD player's transport settling (confirmed with the user that this
+player fully stops rather than looping) crossing the RMS threshold for a
+single tick. It correctly found no match and the system settled into
+`stopped` shortly after - a small wasted AcoustID call, self-corrected,
+not worth chasing further given how rare and low-cost it is.
+
+Net: this is the first true start-to-finish validation of normal,
+non-adversarial playback since the 2026-08-05 fixes landed, and it held up
+cleanly. Phase 3.5's soak-test item is checked off; the initial three
+misses on "Movin' Out" are logged as a real AcoustID coverage data point,
+separate from anything today's testing was meant to fix.

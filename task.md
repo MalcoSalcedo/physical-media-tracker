@@ -91,9 +91,10 @@ of it. See `docs/DEVLOG.md`, 2026-08-05 entries, for full details on both.
 
 - [x] Fix: defer gap-triggered re-identify until signal actually resumes
 - [x] Fix: prevent two `listener.py` instances from running concurrently (pidfile lock)
-- [ ] Full-album soak test: play one album start to finish, uninterrupted,
+- [x] Full-album soak test: play one album start to finish, uninterrupted,
       confirm every track transition lands correctly (no deliberate
-      pauses/skips — just normal listening)
+      pauses/skips — just normal listening) — 2026-08-18, Billy Joel's
+      *The Stranger*; see DEVLOG
 - [ ] Backward skips and rapid back-to-back skips (partial pass on
       2026-08-01 — some rapid sequences still slipped through before
       self-correcting; re-verify with today's fixes in place)
