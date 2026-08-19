@@ -121,6 +121,24 @@ of it. See `docs/DEVLOG.md`, 2026-08-05 entries, for full details on both.
       self-correcting; forward-skip retested and both bugs above fixed
       2026-08-18, but backward/rapid sub-tests weren't reached this
       session — still pending)
+- [x] Fix: `identify_current_track` trims a recorded clip at a real
+      internal track transition instead of using it whole — a long
+      escalating clip (up to 90s) recorded without knowing our position in
+      the current track could run past a short track's end into the next
+      one, producing a fingerprint that blends two songs and matches
+      neither. First attempt capped clip length by the album's shortest
+      track instead — live testing caught a regression (broke a long
+      track, "Excursions", that genuinely needed the full clip) before it
+      shipped; replaced with detect-and-trim, which doesn't degrade tracks
+      that were never at risk — 2026-08-19, see DEVLOG
+- [ ] Backfill inferred `history` entries when a match catches up after
+      skipping several tracks — confirmed 2026-08-19 that even with the
+      trim fix above, a run of genuine AcoustID misses (not a bug, just
+      coverage variance) still means those tracks never appear in
+      `history` at all. The trim fix only prevents *self-inflicted*
+      misses; this is the actual fix for "songs I listened to aren't
+      tracked as listened," which the trim fix alone doesn't solve. Not
+      yet designed or built
 - [ ] Multiple pause/resume cycles in a row on the same track
 - [ ] Switch albums on `/listen` mid-track while the listener is running;
       confirm state resets cleanly instead of mixing old/new album data
