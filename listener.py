@@ -101,6 +101,7 @@ def tick(
     *,
     stopped_detector: GapDetector | None = None,
     pending_gap: dict | None = None,
+    identity_state: dict | None = None,
     gap_check_fn=None,
     record_fn=None,
     sample_rate: int = SAMPLE_RATE,
@@ -113,6 +114,8 @@ def tick(
 
     if pending_gap is None:
         pending_gap = {}
+    if identity_state is None:
+        identity_state = {}
 
     collection_id = current["collection_id"]
     tracks = [dict(t) for t in catalog.get_tracks(conn, collection_id)]
@@ -137,6 +140,14 @@ def tick(
     gap_detected = pending_gap.get("waiting_for_signal", False) and has_signal
     if gap_detected:
         pending_gap["waiting_for_signal"] = False
+        # A gap means the current track's identity is no longer trustworthy,
+        # even before we know whether the upcoming re-identify succeeds. If
+        # it fails (a normal AcoustID miss) and takes long enough to cross
+        # the stale track's stored duration boundary, ADVANCE must not be
+        # allowed to paper over that with a sequential guess - confirmed
+        # live, 2026-08-18: exactly this happened, showing a track that was
+        # never actually played. Only a fresh successful match clears this.
+        identity_state["confirmed"] = False
 
     if stopped_detector is not None:
         stopped_fired = stopped_detector.process_chunk(gap_clip)
@@ -151,6 +162,7 @@ def tick(
         tracks=tracks,
         gap_detected=gap_detected,
         has_signal=has_signal,
+        identity_confirmed=identity_state.get("confirmed", True),
         # SQLite's datetime('now') (used for started_at) is UTC, not local time.
         now=now or datetime.utcnow(),
     )
@@ -161,6 +173,7 @@ def tick(
         )
         if match:
             catalog.update_current_track(conn, collection_id, match, "fingerprint")
+            identity_state["confirmed"] = True
     elif action == timer.ADVANCE:
         next_title = timer.next_track_title(tracks, current["track_title"])
         if next_title:
@@ -176,6 +189,7 @@ def run(api_key: str, device: int | None = None, poll_interval: float = POLL_INT
         detector = GapDetector(SAMPLE_RATE)
         stopped_detector = GapDetector(SAMPLE_RATE, min_gap_seconds=STOPPED_SILENCE_SECONDS)
         pending_gap: dict = {}
+        identity_state: dict = {}
 
         def record_fn(duration):
             return fingerprint.record_clip(duration, sample_rate=SAMPLE_RATE, device=device)
@@ -192,6 +206,7 @@ def run(api_key: str, device: int | None = None, poll_interval: float = POLL_INT
                     detector,
                     stopped_detector=stopped_detector,
                     pending_gap=pending_gap,
+                    identity_state=identity_state,
                     gap_check_fn=gap_check_fn,
                     record_fn=record_fn,
                 )

@@ -201,3 +201,40 @@ def test_decide_next_action_waits_while_stopped_and_still_silent():
         now=datetime(2026, 1, 1, 12, 10, 0),
     )
     assert action == WAIT
+
+
+def test_decide_next_action_reidentifies_instead_of_advancing_when_identity_unconfirmed():
+    # A gap-triggered re-identify can fail (a normal AcoustID miss). If
+    # that failed attempt's own processing time crosses the *stale*
+    # track's stored duration boundary, ADVANCE must not paper over it
+    # with a sequential guess - confirmed live, 2026-08-18: exactly this
+    # showed a track that was never actually played.
+    started_at = datetime(2026, 1, 1, 12, 0, 0)
+    action = decide_next_action(
+        current_track_title="15 Step",
+        status="playing",
+        started_at=started_at,
+        tracks=TRACKS,
+        gap_detected=False,
+        has_signal=True,
+        identity_confirmed=False,
+        now=started_at + timedelta(seconds=300),  # well past 15 Step's 237s
+    )
+    assert action == IDENTIFY
+
+
+def test_decide_next_action_advances_normally_once_identity_reconfirmed():
+    # Sanity check: identity_confirmed=True (the default, and what a
+    # successful match restores) behaves exactly as before.
+    started_at = datetime(2026, 1, 1, 12, 0, 0)
+    action = decide_next_action(
+        current_track_title="15 Step",
+        status="playing",
+        started_at=started_at,
+        tracks=TRACKS,
+        gap_detected=False,
+        has_signal=True,
+        identity_confirmed=True,
+        now=started_at + timedelta(seconds=300),
+    )
+    assert action == ADVANCE

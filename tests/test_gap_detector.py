@@ -58,3 +58,23 @@ def test_fires_again_on_a_second_independent_gap():
 
     second_gap = [detector.process_chunk(SILENT) for _ in range(5)]
     assert second_gap.count(True) == 1
+
+
+def test_catches_a_gap_split_across_chunk_boundaries():
+    # Regression test for a real bug found live (2026-08-18, see DEVLOG):
+    # a genuine CD-player skip's silence measured ~1.55s, but it landed
+    # across two separately-recorded chunks in a way that kept *each*
+    # chunk's own whole-chunk RMS average above the silence threshold -
+    # loud audio surrounding a partial silence dilutes the average enough
+    # that the chunk never reads as silent, even though real,
+    # long-enough-to-matter silence is present. Neither chunk here is
+    # purely loud or purely silent, unlike every other test in this file.
+    detector = GapDetector(SAMPLE_RATE, silence_threshold=200, min_gap_seconds=1.2)
+    loud = np.full(100, 1000, dtype=np.int16)
+    silent = np.zeros(100, dtype=np.int16)
+
+    chunk_a = np.concatenate([np.tile(loud, 13), np.tile(silent, 7)])  # 1.3s loud, 0.7s silent
+    chunk_b = np.concatenate([np.tile(silent, 6), np.tile(loud, 14)])  # 0.6s silent, 1.4s loud
+
+    assert detector.process_chunk(chunk_a) is False
+    assert detector.process_chunk(chunk_b) is True

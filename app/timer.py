@@ -24,17 +24,19 @@ def decide_next_action(
     tracks: list[dict],
     gap_detected: bool,
     has_signal: bool,
+    identity_confirmed: bool = True,
     now: datetime,
 ) -> str:
     """Decide what the listener should do on this tick.
 
     IDENTIFY: no track is known yet (or playback is believed stopped)
-    *and* audio is actually playing, or a gap was detected. Note
-    `gap_detected` is defined by the caller (listener.py) to mean "a gap
-    was observed *and* signal has since resumed" - not merely "silence
-    just crossed the threshold." Firing on bare silence would record and
-    query AcoustID against nothing (confirmed live: a real pause burned
-    ~176s on a doomed lookup) and would also eat the window the
+    *and* audio is actually playing, or a gap was detected, or the
+    current track's identity is unconfirmed. Note `gap_detected` is
+    defined by the caller (listener.py) to mean "a gap was observed
+    *and* signal has since resumed" - not merely "silence just crossed
+    the threshold." Firing on bare silence would record and query
+    AcoustID against nothing (confirmed live: a real pause burned ~176s
+    on a doomed lookup) and would also eat the window the
     stopped-detection logic needs to reach its own threshold, so the
     caller defers the actual signal until there's audio worth
     fingerprinting again. Any detected gap always triggers a full
@@ -53,14 +55,24 @@ def decide_next_action(
     ADR-003) - a few extra AcoustID calls on ordinary track changes is a
     small price for never mis-tracking a skip.
     ADVANCE: the current track's known duration has elapsed with no gap
-    at all, *and* the input currently has signal (e.g. a seamless mix
-    with no silence between tracks) - safe to just move to the next
-    track in album order, no recording/API call needed. Requiring
-    has_signal here matters: without it, a track that stops playing
-    partway through (not at a clean boundary) would eventually have its
-    stored duration "expire" and get silently, wrongly advanced to
-    whatever's next in track order even though nothing is actually
-    playing.
+    at all, its identity is confirmed, *and* the input currently has
+    signal (e.g. a seamless mix with no silence between tracks) - safe to
+    just move to the next track in album order, no recording/API call
+    needed. Requiring has_signal here matters: without it, a track that
+    stops playing partway through (not at a clean boundary) would
+    eventually have its stored duration "expire" and get silently,
+    wrongly advanced to whatever's next in track order even though
+    nothing is actually playing. Requiring identity_confirmed matters
+    too, for a related but distinct reason (found live, 2026-08-18): a
+    gap-triggered re-identify can legitimately fail to match (a normal
+    AcoustID miss) - if that failed attempt's own processing time is long
+    enough to cross the *stale* track's stored duration boundary, the
+    system would otherwise fall back to ADVANCE and silently show
+    whatever's next in album order, which is almost certainly wrong once
+    we already know a skip happened. The caller marks identity
+    unconfirmed the moment a gap fires and only clears it on a fresh
+    successful match, so a failed re-identify keeps retrying instead of
+    ever trusting the old anchor's timer again.
     WAIT: nothing to do yet. Also covers the gap between selecting an
     album and actually pressing play - there's no signal linking the CD
     player to this software, so `has_signal` (a cheap energy check) is
@@ -77,6 +89,9 @@ def decide_next_action(
 
     if not has_signal:
         return WAIT
+
+    if not identity_confirmed:
+        return IDENTIFY
 
     track = next((t for t in tracks if t["title"] == current_track_title), None)
     duration = track["duration_seconds"] if track else None
