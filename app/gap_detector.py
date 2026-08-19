@@ -8,6 +8,45 @@ def rms(samples: np.ndarray) -> float:
     return float(np.sqrt(np.mean(samples.astype(np.float64) ** 2)))
 
 
+def find_first_gap_offset(
+    samples: np.ndarray,
+    sample_rate: int,
+    silence_threshold: float = 200.0,
+    min_gap_seconds: float = 1.2,
+    sub_window_seconds: float = 0.1,
+) -> int | None:
+    """Find the sample offset where a qualifying silence gap begins within
+    an already-recorded clip, or None if no such gap exists.
+
+    Used to trim a clip that happens to run across a real track transition
+    before fingerprinting it, instead of feeding AcoustID a blend of two
+    songs that matches neither. Found live (2026-08-19): capping every
+    clip's length by the album's shortest track (to avoid this) broke
+    matching for a long track that genuinely needed a full-length clip -
+    trimming only when a transition is actually present preserves
+    full-length matching for tracks that don't have this problem, instead
+    of degrading every clip on the album. Same sub-window RMS approach as
+    `GapDetector` and for the same reason: the true gap can be shorter
+    than naive whole-clip analysis would catch.
+    """
+    sub_window_samples = max(1, int(sub_window_seconds * sample_rate))
+    min_gap_samples = int(min_gap_seconds * sample_rate)
+    silent_run_start = None
+    silent_samples = 0
+    for start in range(0, len(samples), sub_window_samples):
+        sub = samples[start : start + sub_window_samples]
+        if rms(sub) < silence_threshold:
+            if silent_samples == 0:
+                silent_run_start = start
+            silent_samples += len(sub)
+            if silent_samples >= min_gap_samples:
+                return silent_run_start
+        else:
+            silent_samples = 0
+            silent_run_start = None
+    return None
+
+
 class GapDetector:
     """Detects the brief silence between tracks from a stream of audio chunks.
 
