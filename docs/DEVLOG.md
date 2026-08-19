@@ -653,3 +653,100 @@ total transitions across both runs landed correctly (the one miss
 self-corrected via the timer, as designed), the no-duration-track edge
 case is now confirmed working, and one genuine unexplained-but-harmless
 log anomaly is on record for follow-up.
+
+## 2026-08-18 (cont.) — Skip testing found two real bugs, both fixed and verified live
+
+Moved on to the next Phase 3.5 item: forward/backward/rapid skip
+detection, re-verified against today's earlier fixes. Planned four
+sub-tests (forward, backward, near-boundary, rapid) on *The Low End
+Theory* (a proven fast/reliable album, chosen specifically so AcoustID
+variance wouldn't confound the skip-detection results). Never got past
+the first one - it failed twice in a row, in a way significant enough to
+warrant a full stop-and-investigate rather than pushing through the rest
+of the plan.
+
+**First failure (accidental boundary coincidence):** skipped from track 1
+to track 4 mid-song; the system silently advanced to track 2 instead - the
+next track in *album order*, not where the disc actually was. The
+timing suggested the skip happened to land close to track 1's natural
+duration boundary, so this looked at first like the known
+boundary-ambiguity edge case from 2026-08-01.
+
+**Second failure (ruled that theory out):** retried with a clean,
+deliberately-mid-track skip (1:50 into a 3:53 track, nowhere near its
+natural end) - same wrong result. This wasn't a boundary coincidence; the
+gap detector wasn't firing *at all* for this CD player's skips, full stop.
+
+**Root-caused with real evidence instead of guessing.** Recorded 40
+seconds of real audio spanning an actual skip and analyzed the RMS
+envelope in fine-grained (50ms) sub-windows. The skip's true silence was
+genuinely there - about 1.55s, comfortably above `min_gap_seconds=1.5` in
+isolation. Replaying the same real recording through the *actual*
+`GapDetector.process_chunk()` (2-second whole-chunk RMS, as used in
+production) confirmed it never fires: the chunk from t=12-14s is 1.2s
+loud + 0.8s silent (whole-chunk RMS 1592), and t=14-16s is the mirror
+image (RMS 322) - both comfortably above the 200 threshold despite each
+containing a large fraction of genuine silence. RMS averages in *power*
+(squared amplitude), so a small loud portion dominates a mostly-silent
+chunk's average. The bug isn't the threshold value; it's that measuring
+one RMS number per 2-second chunk is too coarse to isolate a ~1.5s gap
+that doesn't happen to align with chunk boundaries - and a real CD skip's
+mute period has no reason to ever align with our arbitrary 2-second
+polling grid.
+
+**Fix #1 (`app/gap_detector.py`):** `GapDetector` now measures silence in
+0.1s sub-windows *within* each submitted chunk instead of one whole-chunk
+average, and `min_gap_seconds` dropped from 1.5 to 1.2 (sub-windowing
+alone, still at 1.5, replayed against the same real recording and still
+missed it by a hair - sub-window boundary effects lose a little of the
+true duration, so 1.2 was the smallest change the actual data justified).
+Discussed the tradeoff explicitly before implementing: does this raise
+false-positive risk from legitimate in-song pauses? Somewhat, but the
+consequence is low-severity by design - a false trigger just costs one
+extra re-identify attempt, which will almost certainly reconfirm the same
+track (fuzzy matching is title-based, not position-based), and thanks to
+the 2026-08-05 fix it only records after signal resumes, never into
+silence. Verified the fix against the real recorded skip (not just
+synthetic data) before writing any production code, and added a
+regression test (`test_catches_a_gap_split_across_chunk_boundaries`)
+using a synthetic chunk pair shaped like the measured real-world case.
+
+**Fix #2, found while re-verifying fix #1 live.** With gap detection now
+firing correctly, the re-identify attempt it triggered still sometimes
+missed (a normal AcoustID variance issue, not a bug) - and because that
+failed attempt's own ~2m50s processing time crossed the *stale* track's
+stored duration boundary, the very next tick fell back to `ADVANCE` and
+showed "Buggin' Out," a track that was never actually played (the disc
+had skipped straight past it to "Rap Promoter"). This is the same failure
+mode the user originally flagged - "the system is claiming a song that
+never played, that should absolutely not happen" - just triggered a
+different way than fix #1 addressed.
+
+Fixed by tracking whether the current track's identity is *confirmed*:
+the moment a gap fires, identity becomes unconfirmed and stays that way -
+blocking `ADVANCE` regardless of how much time passes - until a fresh
+successful match clears it. A failed re-identify now just keeps retrying
+instead of ever falling back to a sequential guess. Implemented as a small
+`identity_state` flag threaded through `tick()`/`run()`, the same pattern
+as `pending_gap`. `decide_next_action` gained one new (default-`True`,
+backward-compatible) parameter and two new tests; `listener.py` got one
+end-to-end regression test reproducing the exact failure (gap → failed
+identify → time crosses the stale boundary → must retry, not advance).
+
+**Re-verified live from scratch with both fixes in place, replaying the
+exact scenario that failed twice:** skipped at 1:50 into track 1 again.
+This time the gap fired correctly. The resulting re-identify missed three
+times in a row (real AcoustID variance) - and critically, `track_title`
+held steady on the stale-but-honest "Excursions" through all three misses
+rather than ever guessing wrong. The fourth attempt succeeded, landing on
+"Show Business" (track 6) - correct, given the ~12.5 real minutes that had
+elapsed while the CD kept playing through the actually-skipped-to tracks
+in the background. At no point during the whole sequence did the system
+ever display a track that wasn't genuinely playing.
+
+93 tests passing. Ran out of session time before getting to the
+backward-skip, near-boundary, and rapid-skip sub-tests originally
+planned - those (and the still-unexplained `advance`-right-after-a-
+*successful*-`identify` anomaly from the earlier soak test, which is a
+distinct thing from either bug fixed today) remain open on the Phase 3.5
+checklist.

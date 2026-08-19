@@ -230,6 +230,75 @@ def test_tick_reidentifies_once_signal_resumes_after_a_pending_gap(conn, tiny_ga
     assert catalog.get_now_playing(conn)["track_title"] == "Bodysnatchers"
 
 
+def test_tick_does_not_advance_after_a_failed_gap_triggered_reidentify(conn, tiny_gap_detector):
+    # Regression test for a real bug found live (2026-08-18, see DEVLOG): a
+    # gap-triggered re-identify that fails (a normal AcoustID miss) must
+    # not let a later tick fall back to ADVANCE just because the stale
+    # track's stored duration has since elapsed - that showed a track
+    # that was never actually played (a real skip, not a clean boundary).
+    item_id = catalog.save_item(conn, artist="Radiohead", album="In Rainbows", format="Vinyl")
+    catalog.save_tracks(
+        conn,
+        item_id,
+        [
+            {"title": "15 Step", "duration_seconds": 237},
+            {"title": "Bodysnatchers", "duration_seconds": 242},
+        ],
+    )
+    catalog.set_active_album(conn, item_id)
+    catalog.update_current_track(conn, item_id, "15 Step", "fingerprint")
+
+    pending_gap: dict = {}
+    identity_state: dict = {}
+
+    # Tick 1: a gap fires while silent - stays WAIT, arms the pending gap.
+    with patch("listener.identify.identify_current_track") as identify_mock:
+        listener.tick(
+            conn,
+            "fake-key",
+            tiny_gap_detector,
+            pending_gap=pending_gap,
+            identity_state=identity_state,
+            gap_check_fn=_silent_gap_check,
+        )
+    identify_mock.assert_not_called()
+
+    # Tick 2: signal resumes - the deferred gap fires a re-identify, but it misses.
+    with patch("listener.identify.identify_current_track", return_value=None) as identify_mock:
+        action = listener.tick(
+            conn,
+            "fake-key",
+            tiny_gap_detector,
+            pending_gap=pending_gap,
+            identity_state=identity_state,
+            gap_check_fn=_quiet_gap_check,
+        )
+    assert action == listener.timer.IDENTIFY
+    identify_mock.assert_called_once()
+    assert identity_state["confirmed"] is False
+    assert catalog.get_now_playing(conn)["track_title"] == "15 Step"  # unchanged, now stale
+
+    # Tick 3: well past "15 Step"'s stored duration, no new gap - must keep
+    # retrying IDENTIFY rather than falling back to ADVANCE.
+    far_future = datetime.utcnow() + timedelta(seconds=300)
+    with patch(
+        "listener.identify.identify_current_track", return_value="Bodysnatchers"
+    ) as identify_mock:
+        action = listener.tick(
+            conn,
+            "fake-key",
+            tiny_gap_detector,
+            pending_gap=pending_gap,
+            identity_state=identity_state,
+            gap_check_fn=_quiet_gap_check,
+            now=far_future,
+        )
+    assert action == listener.timer.IDENTIFY
+    identify_mock.assert_called_once()
+    assert identity_state["confirmed"] is True
+    assert catalog.get_now_playing(conn)["track_title"] == "Bodysnatchers"
+
+
 def test_tick_reidentifies_when_stopped_and_signal_resumes(conn, detector, stopped_detector):
     item_id = catalog.save_item(conn, artist="Radiohead", album="In Rainbows", format="Vinyl")
     catalog.save_tracks(conn, item_id, [{"title": "15 Step", "duration_seconds": 237}])

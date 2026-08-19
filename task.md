@@ -104,9 +104,23 @@ of it. See `docs/DEVLOG.md`, 2026-08-05 entries, for full details on both.
       instances, data corruption, and stale reads live), but the root
       cause is still unknown — reproduce offline with a targeted
       back-to-back `tick()` test rather than guessing further live
+- [x] Fix: `GapDetector` measures silence in fine-grained sub-windows
+      instead of one RMS average per 2s chunk, and `min_gap_seconds`
+      dropped 1.5→1.2s — a real CD skip's ~1.5s mute was being diluted
+      below threshold by surrounding loud audio when it didn't align with
+      chunk boundaries, so skips went entirely undetected. Root-caused
+      with a real recorded skip, not guessed — 2026-08-18, see DEVLOG
+- [x] Fix: track current-track identity as "unconfirmed" the moment a gap
+      fires, blocking ADVANCE until a fresh successful match clears it —
+      previously a failed gap-triggered re-identify could still fall back
+      to a wrong sequential-order guess once the stale track's duration
+      "expired" mid-retry, showing a track that was never actually
+      played — 2026-08-18, see DEVLOG
 - [ ] Backward skips and rapid back-to-back skips (partial pass on
       2026-08-01 — some rapid sequences still slipped through before
-      self-correcting; re-verify with today's fixes in place)
+      self-correcting; forward-skip retested and both bugs above fixed
+      2026-08-18, but backward/rapid sub-tests weren't reached this
+      session — still pending)
 - [ ] Multiple pause/resume cycles in a row on the same track
 - [ ] Switch albums on `/listen` mid-track while the listener is running;
       confirm state resets cleanly instead of mixing old/new album data
