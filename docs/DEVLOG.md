@@ -750,3 +750,66 @@ planned - those (and the still-unexplained `advance`-right-after-a-
 *successful*-`identify` anomaly from the earlier soak test, which is a
 distinct thing from either bug fixed today) remain open on the Phase 3.5
 checklist.
+
+## 2026-08-19 — A real product problem (songs missing from history), a fix that regressed, and a better one
+
+Picked up where yesterday left off: even with both skip-detection fixes
+in, the resume-from-a-skip sequence took three real AcoustID misses
+(~9 minutes) to catch up, during which "Rap Promoter," "Butter," and
+"Verses From The Abstract" played in full and were never logged to
+`history` at all - a genuine product defect distinct from yesterday's
+"never show a wrong track" fixes. Yesterday's misses were AcoustID
+variance the display correctly stayed honest about; the fact that
+`history` still doesn't remember those plays at all is its own problem.
+
+**First attempt regressed a working case, caught live before merging.**
+Hypothesized the misses were caused by escalating clips (up to 90s)
+running past a short track's end into the next one, producing a blended,
+unmatchable fingerprint - Rap Promoter/Skypager are only 133s. Implemented
+a fix that capped the escalating duration by the album's shortest known
+track (dropping 90s for the whole album). Live-verifying it immediately
+surfaced a regression: "Excursions" - a long track (3:53) that has
+reliably matched on the first attempt in every previous session - missed
+four times in a row and never got identified before the disc moved on to
+track 2. The blanket per-album cap had thrown away the escalation's
+benefit for every track on the album, including ones nowhere near the
+actual risk, to guard against a danger that only applies to short tracks
+during position-unknown retries.
+
+**Replaced with a more targeted fix.** Instead of guessing in advance
+which clips are risky, check each recorded clip *after the fact* for a
+real internal transition - reusing the same sub-window silence detection
+from yesterday's `GapDetector` fix - and trim to just the clean audio
+before it, only when a transition is actually found
+(`find_first_gap_offset` in `app/gap_detector.py`). A long track with no
+boundary crossing gets the exact same full-length clip as before,
+preserving whatever benefit that length was providing; a short track that
+would have been contaminated gets a clean, correctly-scoped fingerprint
+instead. Re-verified live from scratch: "Excursions" matched correctly on
+the first attempt again, confirming the regression was actually fixed and
+not just worked around.
+
+**Honest finding once trimming was in place: it didn't solve the
+original complaint.** Playing back through the same album, Rap Promoter
+still took three misses to resolve, and `history` still ended up missing
+the same three tracks. Checked directly rather than assuming - this makes
+sense in retrospect: trimming only prevents *self-inflicted* misses (a
+clip contaminated by spanning a boundary), it does nothing for genuine
+AcoustID coverage variance, which both yesterday's and today's actual
+misses look like. The two failure modes look identical from the outside
+(a missed identify) but need different fixes, and today's only addresses
+one of them.
+
+**What's actually still needed**, discussed but not yet built: backfilling
+`history` with inferred entries once a match catches up after a multi-song
+gap, so a stretch of AcoustID misses doesn't mean those plays are lost
+from the record entirely - the complementary idea from yesterday's
+end-of-session analysis, now confirmed necessary rather than just
+theoretically nice-to-have.
+
+95 tests passing. Worth remembering from today specifically: verifying a
+fix live isn't just about confirming the new case works - re-checking a
+case that was *already reliable* caught a real regression before it
+shipped, and re-checking the *original* symptom after the fix caught that
+the fix, while correct on its own terms, didn't fully address what was
+actually asked for.
