@@ -813,3 +813,96 @@ case that was *already reliable* caught a real regression before it
 shipped, and re-checking the *original* symptom after the fix caught that
 the fix, while correct on its own terms, didn't fully address what was
 actually asked for.
+
+## 2026-08-20/21 — Rejected a risky idea, then ran down the Rap Promoter mystery for real
+
+**The history-backfill idea from yesterday got rejected, correctly.**
+Proposed backfilling `history` with inferred track entries once a match
+catches up after a multi-song gap. Pushback: this assumes sequential,
+uninterrupted playback during the gap - if that assumption is wrong (a
+pause, another skip, a replay), a *guessed* entry sits permanently in the
+record looking exactly as authoritative as a confirmed match. That's the
+same mistake already ruled out for the live display, just relocated to
+`history` - "never claim a song that never played" doesn't stop applying
+just because the claim is retroactive instead of live. Agreed instead to
+focus entirely on *reducing* misses rather than papering over them after
+the fact, since a smaller number of real gaps is strictly better than the
+same gaps disguised as data.
+
+**Went looking for the real cause of Rap Promoter's misses instead of
+accepting "AcoustID variance" at face value.** Good pushback here too:
+we'd only ever tested Rap Promoter via skip-triggered retries, never via
+a clean, ordinary transition - so "is this the skip logic" was still a
+live, untested hypothesis, not something ruled out. Ran it down with a
+real digital copy of the track (provided directly, not ripped from the
+disc) and a sequence of increasingly targeted diagnostics:
+
+- **Clean file, every clip length (20/45/90/full), true duration (133s):**
+  matches at 0.96-0.98 confidence every time. AcoustID has this track
+  fingerprinted well - not a coverage gap. (Also lists it under a typo'd
+  alternate title, "Rap Promotor" - harmless, doesn't affect matching.)
+  Also notable: 133s is the *shortest* duration on this whole album, so
+  it's the very first guess our own pipeline tries on every attempt -
+  if the audio really is Rap Promoter, production should find this
+  almost as fast as this clean test did.
+- **Live recording, direct and clean (no skip, no listener.py involved at
+  all - just `record_clip` called directly, 60s, 10s into the track):**
+  zero matches, at every clip length, with the correct duration guess.
+  Signal quality metrics were excellent by every conventional measure -
+  50% peak level, zero clipping, 0.27 DC offset, 39% energy above 5kHz -
+  ruling out the usual technical-capture suspects from the Abbey
+  Road/White Pony playbook.
+- **Position/offset ruled out directly, not assumed:** tested the same
+  live recording sliced at four different start offsets (0s/5s/20s, 30s
+  and 60s lengths) - all zero. The clean file's *matching* 10s-70s segment
+  (extracted via `ffmpeg -ss 10 -t 60`, run through the same
+  `compressed_fingerprint` pipeline call production uses) matched at 0.96.
+  Same content, same offset, same duration guess, same code path -
+  the only variable left standing is the analog signal chain itself.
+- **A specific position-mismatch theory got tested and killed too:** the
+  live recording started closer to 5s in than the intended 10s: could
+  that timing slop explain a zero-match? No - Chromaprint fingerprint
+  matching is deliberately alignment-based, meaning it doesn't need to
+  know where in a track a clip started (this is the same property the
+  entire skip-detection system already depends on: a skip landing
+  mid-track still matches without ever declaring a start offset).
+  Confirmed empirically anyway by testing several slices of the *same*
+  live clip at different starting points - all zero, ruling out timing
+  precision as the variable.
+- **Full sequential no-skip soak test, the most direct test of "is this
+  the skip logic":** played the album straight through from track 1,
+  zero deliberate skips. "Excursions" and "Buggin' Out" both identified
+  correctly and promptly at their natural boundaries. The Buggin' Out →
+  Rap Promoter transition - a completely ordinary gap-triggered
+  re-identify, no skip-retry code involved - still missed three times in
+  a row before the CD was stopped. This is the cleanest possible evidence
+  that the skip-tracking logic (`pending_gap`, `identity_confirmed`, the
+  clip-trim fix) isn't the cause: none of that code path is exercised
+  differently by a normal transition versus a skip retry, and the miss
+  happens either way.
+
+**Conclusion:** this isn't a coverage gap, isn't a duration-guessing
+issue, isn't a clip-boundary contamination issue, isn't a position/timing
+issue, and isn't a skip-tracking logic bug - all five were directly tested
+and ruled out with evidence, not assumed away. What's left is a genuine,
+reproducible finding: something about this specific track's audio content
+(short, sparse, likely less harmonically complex than a track with vocals
+over a full beat like Excursions) makes it more sensitive to whatever
+subtle coloration the CD player → cable → Focusrite analog path
+introduces, even though that signal measures clean by every metric we
+have. No further fix attempted today - this would need real audio
+engineering (spectrogram/phase comparison of live vs. clean) to chase
+further, and isn't clearly worth it for a project at this scale. The
+existing local fingerprint cache remains the practical mitigation: once a
+track like this gets identified by any means once, repeat plays of the
+same disc use the cache instead of needing AcoustID again.
+
+**One new small bug found along the way, unrelated to the investigation
+itself:** stopping the CD mid-session produced a brief signal blip that
+triggered one identify attempt, which then crashed with
+`fpcalc: CalledProcessError` trying to fingerprint an apparently
+near-silent/degenerate clip. `listener.py`'s outer `try`/`except` caught
+it and the daemon kept running normally afterward, so no lasting harm,
+but fingerprinting shouldn't be attempted at all on a clip that's
+effectively silent. Added to the Phase 3.5 checklist rather than fixed
+inline, since it's rare and self-recovering, not urgent.
