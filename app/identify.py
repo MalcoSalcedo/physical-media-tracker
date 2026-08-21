@@ -1,10 +1,12 @@
 import sqlite3
 
 from app import catalog, fingerprint, track_matcher
-from app.gap_detector import find_first_gap_offset
+from app.gap_detector import find_first_gap_offset, rms
 
 DEFAULT_DURATIONS = (20, 45, 90)
 SAMPLE_RATE = 44100
+# Matches GapDetector's default silence_threshold, for consistency.
+SILENCE_THRESHOLD = 200.0
 
 
 def identify_current_track(
@@ -44,6 +46,16 @@ def identify_current_track(
     album, not just the ones actually at risk. Trimming only when a
     transition is actually detected fixes the short-track contamination
     case without degrading long tracks that never had the problem.
+
+    A clip that's silent/near-silent (or trims down to nothing) is skipped
+    entirely rather than fingerprinted. Found live (2026-08-20): a brief
+    signal blip can trigger this function (the caller's cheap gap-check
+    clip looked like real signal), but by the time this clip is actually
+    recorded the input may have already gone silent again - `fpcalc` can
+    raise on effectively-silent audio rather than just returning a
+    low-quality fingerprint, which crashed a tick before this guard
+    existed (the daemon's outer exception handler caught it, but it's
+    cleaner to just not attempt it).
     """
     if record_fn is None:
         record_fn = fingerprint.record_clip
@@ -57,6 +69,8 @@ def identify_current_track(
         gap_offset = find_first_gap_offset(samples, sample_rate)
         if gap_offset is not None:
             samples = samples[:gap_offset]
+        if rms(samples) < SILENCE_THRESHOLD:
+            continue
         actual_duration = len(samples) / sample_rate
 
         raw_fp = fingerprint.raw_fingerprint(samples, sample_rate)
