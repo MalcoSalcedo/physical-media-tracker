@@ -192,3 +192,48 @@ def test_does_not_trim_a_clip_with_no_internal_transition(conn, album):
 
     untouched_samples = raw_fp_mock.call_args[0][0]
     assert len(untouched_samples) == 20 * identify.SAMPLE_RATE  # nothing trimmed off
+
+
+def test_skips_fingerprinting_a_silent_clip(conn, album):
+    # A brief signal blip can trigger an identify attempt, but by the time
+    # the clip is actually recorded the input may have gone silent again -
+    # fpcalc can raise on effectively-silent audio (found live,
+    # 2026-08-20), so it must never be attempted at all.
+    silent = np.zeros(20 * identify.SAMPLE_RATE, dtype=np.int16)
+
+    with (
+        patch("app.identify.fingerprint.raw_fingerprint") as raw_fp_mock,
+        patch("app.identify.fingerprint.compressed_fingerprint") as compressed_mock,
+        patch("app.identify.fingerprint.lookup_with_duration") as lookup_mock,
+    ):
+        result = identify.identify_current_track(
+            conn, album, "fake-api-key", record_fn=lambda duration: silent, durations=(20,)
+        )
+
+    assert result is None
+    raw_fp_mock.assert_not_called()
+    compressed_mock.assert_not_called()
+    lookup_mock.assert_not_called()
+
+
+def test_escalates_past_a_silent_clip_to_a_later_real_one(conn, album):
+    silent = np.zeros(20 * identify.SAMPLE_RATE, dtype=np.int16)
+    loud = np.full(45 * identify.SAMPLE_RATE, 1000, dtype=np.int16)
+    calls = []
+
+    def fake_record(duration):
+        calls.append(duration)
+        return silent if duration == 20 else loud
+
+    with (
+        patch("app.identify.fingerprint.raw_fingerprint", return_value=[1, 2, 3]),
+        patch("app.identify.fingerprint.compressed_fingerprint", return_value="fp-data"),
+        patch(
+            "app.identify.fingerprint.lookup_with_duration",
+            return_value=[(0.9, "rid-1", "Bodysnatchers", "Radiohead")],
+        ),
+    ):
+        result = identify.identify_current_track(conn, album, "fake-api-key", record_fn=fake_record)
+
+    assert result == "Bodysnatchers"
+    assert calls == [20, 45]  # skipped straight past the silent 20s clip
