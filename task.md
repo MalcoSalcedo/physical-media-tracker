@@ -97,13 +97,19 @@ of it. See `docs/DEVLOG.md`, 2026-08-05 entries, for full details on both.
       *The Stranger* and Kanye West's *808s & Heartbreak* (2 full albums,
       15/16 transitions correct on the first pass, the one miss
       self-corrected via the timer as designed); see DEVLOG
-- [ ] Investigate 2026-08-18 anomaly: a stray `advance` printed ~3s after
-      a successful identify, which `decide_next_action` shouldn't be able
-      to produce given the current track's duration hadn't remotely
-      elapsed. Didn't corrupt any state (traced and ruled out duplicate
-      instances, data corruption, and stale reads live), but the root
-      cause is still unknown — reproduce offline with a targeted
-      back-to-back `tick()` test rather than guessing further live
+- [x] Investigated 2026-08-18 anomaly (a stray `advance` printed ~3s after
+      a successful identify) — **could not reproduce, 2026-08-21**. Wrote
+      the recommended targeted offline test: a real gap-triggered identify
+      that succeeds (fresh `started_at`), then an immediate second `tick()`
+      call with real wall-clock time - correctly returns `WAIT`, using the
+      same decision logic the code had on 2026-08-18 (identity_confirmed
+      didn't exist yet, so this isn't just "fixed by a later change").
+      Also re-confirmed `track_matcher.match_against_album` can't produce
+      the title-mismatch that would be needed to explain it (it always
+      returns our own canonical title, never AcoustID's raw one). Treating
+      as a non-reproducible one-off from that live session, not an active
+      bug - it never corrupted data when it happened, and there's no new
+      evidence left to chase without more guessing
 - [x] Fix: `GapDetector` measures silence in fine-grained sub-windows
       instead of one RMS average per 2s chunk, and `min_gap_seconds`
       dropped 1.5→1.2s — a real CD skip's ~1.5s mute was being diluted
@@ -153,13 +159,28 @@ of it. See `docs/DEVLOG.md`, 2026-08-05 entries, for full details on both.
       bug. No fix attempted — would need real audio engineering to chase
       further; local fingerprint cache remains the practical mitigation
       once any track is identified once. See DEVLOG for the full method
-- [ ] Fix: `identify.py`/`fingerprint.py` should skip fingerprinting
-      entirely when a recorded clip is silent/near-silent, instead of
-      letting `fpcalc` throw `CalledProcessError` — found 2026-08-20 when
-      stopping the CD produced a brief signal blip that triggered one
-      doomed identify attempt. `listener.py`'s outer exception handler
-      caught it and the daemon recovered fine, so low urgency, but worth
-      a proper guard rather than relying on the catch-all
+- [x] Fix: skip fingerprinting entirely when a recorded clip is
+      silent/near-silent, instead of letting `fpcalc` throw
+      `CalledProcessError` — found 2026-08-20 when stopping the CD
+      produced a brief signal blip that triggered one doomed identify
+      attempt (`listener.py`'s outer exception handler caught it and the
+      daemon recovered fine, but worth a proper guard). Fixed and tested
+      2026-08-21
+- [x] Run `db.py`'s migration path against a copy of the real production
+      DB, not just a fresh test DB — 2026-08-21, see DEVLOG. Rolled a copy
+      of the real DB (11 albums, 152 tracks, real cached fingerprints)
+      back to simulate the oldest pre-migration schema, then ran the
+      actual `_migrate()` function against it: all pre-existing data
+      survived intact (row counts and every non-dropped column value
+      unchanged), new columns backfilled per their documented heuristics
+      (`status` → `playing` since `track_title` was set - correctly *not*
+      the real value, `stopped`, which a pre-status-column DB has no way
+      to know), and genuinely-new-feature columns (`discogs_id`,
+      `cached_fingerprint`) came back `NULL` for old rows, which is
+      correct since that data never existed for them. Confirmed the app's
+      own code (not just schema checks) operates correctly against the
+      migrated copy, including the existing `discogs_id`→`musicbrainz_id`
+      fallback handling the newly-null column
 - [ ] Multiple pause/resume cycles in a row on the same track
 - [ ] Switch albums on `/listen` mid-track while the listener is running;
       confirm state resets cleanly instead of mixing old/new album data
