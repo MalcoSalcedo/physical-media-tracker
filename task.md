@@ -131,14 +131,35 @@ of it. See `docs/DEVLOG.md`, 2026-08-05 entries, for full details on both.
       track, "Excursions", that genuinely needed the full clip) before it
       shipped; replaced with detect-and-trim, which doesn't degrade tracks
       that were never at risk — 2026-08-19, see DEVLOG
-- [ ] Backfill inferred `history` entries when a match catches up after
-      skipping several tracks — confirmed 2026-08-19 that even with the
-      trim fix above, a run of genuine AcoustID misses (not a bug, just
-      coverage variance) still means those tracks never appear in
-      `history` at all. The trim fix only prevents *self-inflicted*
-      misses; this is the actual fix for "songs I listened to aren't
-      tracked as listened," which the trim fix alone doesn't solve. Not
-      yet designed or built
+- [x] ~~Backfill inferred `history` entries when a match catches up after
+      skipping several tracks~~ — **rejected 2026-08-20**, correctly: this
+      assumes sequential, uninterrupted playback during the gap, which
+      isn't guaranteed (a pause, another skip, a replay). A wrong
+      "confirmed-looking" entry permanently in the history record is worse
+      than an honest gap — the same "never claim a song that never played"
+      principle already applied to the live display. Decided to focus on
+      reducing misses instead; see the Rap Promoter investigation below
+- [x] Investigated whether "Rap Promoter" misses (2026-08-19) were caused
+      by a bug in our skip-tracking logic, as suspected — **ruled out with
+      direct evidence, 2026-08-20/21**: clean file matches at 0.96-0.98
+      confidence at every clip length (not a coverage gap); live recording
+      fails at every clip length/offset tested, including a fully clean,
+      non-skip, directly-recorded clip (rules out skip-tracking code, clip
+      trimming, and position/timing precision); a full sequential no-skip
+      soak test still missed it 3x at the ordinary Buggin' Out → Rap
+      Promoter transition (the most direct possible test of "is this the
+      skip logic" — it isn't). Conclusion: a genuine signal-chain
+      sensitivity for this specific track's audio content, not a pipeline
+      bug. No fix attempted — would need real audio engineering to chase
+      further; local fingerprint cache remains the practical mitigation
+      once any track is identified once. See DEVLOG for the full method
+- [ ] Fix: `identify.py`/`fingerprint.py` should skip fingerprinting
+      entirely when a recorded clip is silent/near-silent, instead of
+      letting `fpcalc` throw `CalledProcessError` — found 2026-08-20 when
+      stopping the CD produced a brief signal blip that triggered one
+      doomed identify attempt. `listener.py`'s outer exception handler
+      caught it and the daemon recovered fine, so low urgency, but worth
+      a proper guard rather than relying on the catch-all
 - [ ] Multiple pause/resume cycles in a row on the same track
 - [ ] Switch albums on `/listen` mid-track while the listener is running;
       confirm state resets cleanly instead of mixing old/new album data
