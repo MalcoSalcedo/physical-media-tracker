@@ -906,3 +906,67 @@ it and the daemon kept running normally afterward, so no lasting harm,
 but fingerprinting shouldn't be attempted at all on a clip that's
 effectively silent. Added to the Phase 3.5 checklist rather than fixed
 inline, since it's rare and self-recovering, not urgent.
+
+## 2026-08-21 — Three no-hardware fixes while the CD got a physical inspection
+
+Cleared out three Phase 3.5 items that don't need the CD player, while
+the disc itself was being checked by hand for scratches.
+
+**Fixed the `fpcalc` crash from yesterday.** `identify_current_track` now
+checks each recorded (and possibly trimmed) clip's RMS before
+fingerprinting it, and skips straight to the next escalation length if
+it's silent - the same `rms()`/threshold already used everywhere else in
+the pipeline. Two new tests: a fully silent clip is skipped without ever
+calling `fpcalc`, and escalation correctly continues past a silent clip to
+a real one at a longer length.
+
+**Took a real shot at the 2026-08-18 `advance`-after-`identify` anomaly.**
+Wrote the targeted offline reproduction that was recommended back then:
+a real gap-triggered identify that succeeds (setting a track with a fresh
+`started_at`), immediately followed by a second `tick()` call using real
+wall-clock time - the same sequence that produced the anomaly live. It
+does not reproduce; the second tick correctly returns `WAIT`. This uses
+the same decision logic the code had on 2026-08-18 (`identity_confirmed`
+didn't exist until the next day, so this isn't just "fixed by a later
+change" - the logic never should have allowed it). Also went back to
+`track_matcher.match_against_album` to check a specific hypothesis (a
+title string mismatch between what gets saved and what's in the
+tracklist, which would make `next_track_title` silently return `None`)
+- ruled out by the code itself: it always returns the album's own
+canonical title, never AcoustID's raw one, so that mismatch can't happen.
+Treating this as a non-reproducible one-off from that specific live
+session rather than an active bug - it never corrupted data when it
+happened, and there's no further evidence to chase without more
+guessing.
+
+**Tested the DB migration path against real data for the first time.**
+Every migration test so far has run against a fresh `schema.sql`-based DB,
+which already has every column - the guarded `ALTER TABLE` branches in
+`_migrate()` never actually execute in that setup. Copied the real
+production DB (11 albums, 152 tracks, real cached fingerprints - never
+touched the original) and rolled it back to simulate the oldest
+pre-migration schema: dropped `discogs_id`, `cached_fingerprint`, and
+`now_playing.status` via `ALTER TABLE ... DROP COLUMN` (SQLite 3.45
+supports this directly). Ran the actual `_migrate()` function against it:
+
+- Every pre-existing row and column value survived intact (11/152/1 row
+  counts unchanged, `artist`/`album`/`title`/etc. all correct).
+- `now_playing.status` backfilled to `playing` per the documented
+  heuristic (`track_title IS NOT NULL`) - correctly *not* the real value,
+  `stopped`, which a DB from before the `status` column existed has no way
+  to know. Not a bug; exactly the documented behavior.
+- `discogs_id`/`cached_fingerprint` came back `NULL` for all old rows,
+  which is also correct - a genuinely old DB never had that data in the
+  first place, since the columns didn't exist yet.
+
+Then ran the app's actual `catalog` functions (not just schema checks)
+against the migrated copy to confirm real functional correctness:
+`list_items`, `get_now_playing`, and `get_tracks` all worked normally, and
+the pre-existing `discogs_id` → `musicbrainz_id` fallback in
+`fetch_tracklist` correctly handled the newly-null column without any
+special-casing needed.
+
+97 tests passing. None of today's three items needed the CD player at
+all - a useful reminder that not every Phase 3.5 item requires live
+hardware, and it's worth keeping a running list of which ones don't for
+sessions where the hardware isn't available.
